@@ -45,7 +45,10 @@ extern "C" {
 #define VBUS_DETECT_GPIO_PIN                (P4_0_PIN)
 #define VBUS_DETECT_STATE                   (0u)
 
+#define CY_APP_SPI_MAX_USB_TRANSFER_SIZE    (0x800)
+
 #define USB_DESC_ATTRIBUTES __attribute__ ((section(".descSection"), used)) __attribute__ ((aligned (32)))
+#define HBDMA_BUF_ATTRIBUTES __attribute__ ((section(".hbBufSection"), used)) __attribute__ ((aligned (32)))
 
 /* Vendor command code used to return WinUSB specific descriptors. */
 #define MS_VENDOR_CODE                    (0xF0)
@@ -89,9 +92,26 @@ struct cy_stc_usb_app_ctxt_
 
     /* USB connection status */
     bool usbConnectDone;
+
+    uint8_t *qspiWriteBuffer;
+    uint8_t *qspiReadBuffer;
+    uint8_t glpassiveSerialMode;
 };
 
+/**
+ * @typedef cy_en_fx10_fpga_config_type_t
+ * @brief Enum for FPGA Configuration
+*/ 
+typedef enum cy_en_fx10_fpga_config_type_t
+{
+    FPGA_PASSIVE_SERIAL_x4 = 1,
+    FPGA_PASSIVE_SERIAL_x8,
+    FPGA_CONFIG_INVALID = 0xFF,
 
+}cy_en_fx10_fpga_config_type_t;
+
+#define ASSERT_NON_BLOCK(condition, value) checkStatus(__func__, __LINE__, condition, value, false);
+void checkStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking);
 
 /*Task Handler*/
 #if FREERTOS_ENABLE

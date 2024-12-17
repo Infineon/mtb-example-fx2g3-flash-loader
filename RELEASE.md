@@ -1,4 +1,4 @@
-# Flash Loader Application 1.0
+# Flash Loader Application 1.0.1
 
 ## What's Included?
 
@@ -6,7 +6,7 @@ Refer to the [README.md](./README.md).
 
 ## Defect Fixes
 
-* Initial release
+* Added support for Rev02 Kit
 
 ## Supported Software and Tools
 

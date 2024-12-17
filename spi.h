@@ -29,9 +29,9 @@
 
 #include "cy_pdl.h"
 #include "cy_debug.h"
+#include "usb_app.h"
 
 #define ASSERT(condition, value)            Cy_App_CheckStatus(__func__, __LINE__, condition, value, true);
-#define ASSERT_NON_BLOCK(condition, value)  Cy_App_CheckStatus(__func__, __LINE__, condition, value, false);
 
 #define SMIF_HW                           (SMIF0)
 #define CY_SYSCLK_SPI_CLK_HF1             (1)
@@ -80,18 +80,46 @@
 #define SMIF_DATA7_PORT                   (P7_7_PORT)
 #define SMIF_DATA7_PIN                    (P7_7_PIN)
 
-#define CY_SPI_WRITE_ENABLE_CMD           (0x06)
-#define CY_SPI_READ_ID_CMD                (0x9F)
+#if FLASH_AT45D
 #define CY_SPI_STATUS_READ_CMD            (0xD7)
-
 #define CY_SPI_SECTOR_ERASE_CMD           (0x7C)
+#define CY_SPI_PROGRAM_CMD                (0x84)
+#define CY_SPI_PROGRAM_CMD_1              (0x83)
+#define CY_SPI_WRITE_ENABLE_CMD           (0x06)
+#define CY_SPI_READ_CMD                   (0x0B)
+#define SPI_ADDRESS_BYTE_COUNT            (4)
+#define CY_SPI_WRITE_ENABLE_LATCH_MASK    (0x02)
+#define CY_SPI_WIP_MASK                   (0x80)
+#define CY_SPI_WIP_STATUS                 (0x00)
+#else
+#define CY_SPI_STATUS_READ_CMD            (0x05)
+#define CY_SPI_SECTOR_ERASE_CMD           (0xD8)
+#define CY_SPI_HYBRID_SECTOR_ERASE_CMD    (0x20)
+#define CY_SPI_PROGRAM_CMD                (0x02)
+#define CY_SPI_WRITE_ENABLE_CMD           (0x06)
+#define CY_SPI_READ_CMD                   (0x03)
 #define SPI_ADDRESS_BYTE_COUNT            (3)
-#define CY_FLASH_ID_LENGTH                (0x04)
+#define CY_SPI_RESET_ENABLE_CMD           (0x66)
+#define CY_SPI_SW_RESET_CMD               (0x99)
+#define CY_SPI_WRITE_ENABLE_LATCH_MASK    (0x02)
+#define CY_SPI_WIP_MASK                   (0x01)
+#define CY_SPI_WIP_STATUS                 (0x01)
+#endif
 
+#define CY_SPI_READ_ID_CMD                (0x9F)
+#define CY_FLASH_ID_LENGTH                (0x04)
 #define CY_APP_SPI_FLASH_ERASE_SIZE       (0x10000)
-#define CY_APP_SPI_FLASH_PAGE_SIZE        (0x100)
-#define CY_APP_SPI_MAX_USB_TRANSFER_SIZE  (0x800)
-#define CY_APP_SPI_PROGRAM_TIMEOUT_US     (20000)
+#define CY_SPI_FLASH_PAGE_SIZE            (0x100)
+#define CY_SPI_PROGRAM_TIMEOUT_US         (650000)
+#define MAX_BUFFER_SIZE                   (2048u)
+
+#define CY_CFI_DEVICE_SIZE_OFFSET          (0x27)
+#define CY_CFI_ERASE_NUM_SECTORS_OFFSET    (0x2D)
+#define CY_CFI_ERASE_REGION_SIZE_INFO_SIZE (0x04)
+#define CY_CFI_ERASE_SECTOR_SIZE_OFFSET    (0x2F)
+#define CY_CFI_MAX_SIZE_NUM_ERASE_SECTORS  (0xFF)
+#define CY_CFI_NUM_ERASE_REGION_OFFSET     (0x2C)
+#define CY_CFI_TABLE_LENGTH                (0x56)
 
 
 /* Vendor commands sent by USB Host application (eg: control center)*/
@@ -105,14 +133,40 @@ typedef enum cy_en_flashProgrammerVendorCmd_t
     FLASH_CMD_FLASH_GET_ID          = 0xB1,
 }cy_en_flashProgrammerVendorCmd_t;
 
+typedef enum cy_en_flash_index_t
+{
+  SPI_FLASH_0    = 0,
+  SPI_FLASH_1    = 1,
+  DUAL_SPI_FLASH = 2,
+  NUM_SPI_FLASH,
+}cy_en_flash_index_t;
+
+typedef struct cy_stc_cfi_erase_block_info_t
+{
+  uint32_t numSectors;
+  uint32_t sectorSize;
+  uint32_t startingAddress;
+  uint32_t lastAddress;
+} cy_stc_cfi_erase_block_info_t ;
+
+typedef struct cy_stc_cfi_flash_map_t
+{
+  uint32_t deviceSizeFactor; /*0x27h*/
+  uint32_t deviceSize;
+  uint32_t numEraseRegions;    /*0x2c*/
+  cy_stc_cfi_erase_block_info_t memoryLayout[CY_CFI_MAX_SIZE_NUM_ERASE_SECTORS]; /* 0x2D onwards*/
+  uint32_t num4KBParameterRegions;
+}cy_stc_cfi_flash_map_t;
+
 extern cy_stc_smif_context_t spiContext;
 
 cy_en_smif_status_t Cy_SPI_Stop(void);
-cy_en_smif_status_t Cy_SPI_Start(cy_en_smif_slave_select_t ss);
-cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_smif_slave_select_t slaveSelect);
-bool Cy_SPI_IsMemBusy(cy_en_smif_slave_select_t slaveSelect);
-cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_smif_slave_select_t ss);
-cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_smif_slave_select_t ss);
-cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_smif_slave_select_t slaveSelect, uint32_t address);
+cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex);
+cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIndex);
+bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex);
+cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex);
+cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex);
+cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t address);
 void Cy_App_CheckStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking);
+cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable);
 #endif

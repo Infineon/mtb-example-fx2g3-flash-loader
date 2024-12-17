@@ -1,7 +1,6 @@
 # EZ-USB&trade; FX2G3: Flash loader application
 
-This application allows users to download the FPGA bin binaries to the SPI flash device available on the FPGA add-on board connected to the FX2G3 104LGA kit baseboard using the USB interface. The FPGA add-on board has AT45DB flash.
-
+This application allows users to download the FPGA bin binaries to the SPI flash device available on the FPGA add-on board connected to the FX2G3 104LGA kit baseboard using the USB interface.
 > **Note:** This code example is an alpha release only for EZ-USB&trade; FX2G3 devices.
 
 [View this README on GitHub.](https://github.com/Infineon/mtb-example-fx2g3-flash-loader)
@@ -10,6 +9,7 @@ This application allows users to download the FPGA bin binaries to the SPI flash
 
 
 ## Requirements
+
 - [ModusToolbox&trade;](https://www.infineon.com/modustoolbox) v3.2 or later (tested with v3.2)
 - Board support package (BSP) minimum required version: 4.3.2
 - Programming language: C
@@ -17,12 +17,14 @@ This application allows users to download the FPGA bin binaries to the SPI flash
 
 
 ## Supported toolchains (make variable 'TOOLCHAIN')
+
 - GNU Arm&reg; Embedded Compiler v11.3.1 (`GCC_ARM`) – Default value of `TOOLCHAIN`
 - Arm&reg; Compiler v6.16 (`ARM`)
 
+
 ## Supported kits (make variable 'TARGET')
 
-- [EZ-USB&trade; FX2G3 DVK](https://github.com/Infineon/mtb-example-fx2g3-flash-loader) (`KIT_FX2G3_104LGA`) – Default value of `TARGET`
+- [EZ-USB&trade; FX2G3 DVK](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/) (`KIT_FX2G3_104LGA`) – Default value of `TARGET`
 
 
 ## Hardware setup
@@ -72,13 +74,14 @@ The ModusToolbox&trade; tools package provides the Project Creator as both a GUI
 
 </details>
 
+
 <details><summary><b>Use Project Creator CLI</b></summary>
 
 The 'project-creator-cli' tool can be used to create applications from a CLI terminal or from within batch files or shell scripts. This tool is available in the *{ModusToolbox&trade; install directory}/tools_{version}/project-creator/* directory.
 
 Use a CLI terminal to invoke the 'project-creator-cli' tool. On Windows, use the command-line 'modus-shell' program provided in the ModusToolbox&trade; installation instead of a standard Windows command-line application. This shell provides access to all ModusToolbox&trade; tools. You can access it by typing "modus-shell" in the search box in the Windows menu. In Linux and macOS, you can use any terminal application.
 
-The following example clones the "[EZ-USB&trade; FX2G3: Flash loader application](https://github.com/Infineon/mtb-example-fx2g3-flash-loader)" application with the desired name "FX2G3 flash loader" configured for the *KIT_FX2G3_104LGA* BSP into the specified working directory, *C:/mtb_projects*:
+The following example clones the "[EZ-USB&trade; FX2G3: Flash loader application](https://github.com/Infineon/mtb-example-fx2g3-flash-loader)" application with the desired name "FX2G3_Flash_Loader" configured for the *KIT_FX2G3_104LGA* BSP into the specified working directory, *C:/mtb_projects*:
 
    ```
    project-creator-cli --board-id KIT_FX2G3_104LGA --app-id mtb-example-fx2g3-flash-loader --user-app-name FX2G3_Flash_loader --target-dir "C:/mtb_projects"
@@ -97,6 +100,7 @@ Argument | Description | Required/optional
 > **Note:** The project-creator-cli tool uses the `git clone` and `make getlibs` commands to fetch the repository and import the required libraries. For details, see the "Project creator tools" section of the [ModusToolbox&trade; tools package user guide](https://www.infineon.com/ModusToolboxUserGuide) (locally available at {ModusToolbox&trade; install directory}/docs_{version}/mtb_user_guide.pdf).
 
 </details>
+
 
 ### Open the project
 
@@ -119,7 +123,6 @@ Launch VS Code manually, and then open the generated *{project-name}.code-worksp
 For more details, see the [Visual Studio Code for ModusToolbox&trade; user guide](https://www.infineon.com/MTBVSCodeUserGuide) (locally available at *{ModusToolbox&trade; install directory}/docs_{version}/mt_vscode_user_guide.pdf*).
 
 </details>
-
 
 <details><summary><b>Command line</b></summary>
 
@@ -148,7 +151,7 @@ For more details, see the [ModusToolbox&trade; tools package user guide](https:/
       
    4. Confirm if the programming is successful in the log window of the application.
 
-4. After programming, the application starts automatically. Confirm that "\<CE Title>" is displayed on the UART terminal.
+4. After programming, the application starts automatically. Confirm that the following title is displayed on the UART terminal.
 
    **Figure 1. Terminal output on program startup**
 
@@ -161,23 +164,22 @@ For more details, see the [ModusToolbox&trade; tools package user guide](https:/
 6. Select the device and click **Program** > **External Flash**, and navigate to the FPGA binary to program the external flash. 
 
 
-## Logging configurations
-
-By default, the USBFS port is enabled for debug logs.
-To enable debug logs on UART, set **USBFS_LOGS_ENABLE** compiler flag to '0u' in the *makefile*. SCB4 of the FX2G3 device is used as UART with a baud rate of 921,600 to send out log messages through the P11.0 pin.
-
 ## Debugging
 
-Debug the code example by setting debug levels for the UART logs. Set the **DEBUG_LEVEL** macro in *main.c* file with the following values for debugging.
+By default, the USBFS port is enabled for debug logs.
+
+To enable debug logs on UART, set the **USBFS_LOGS_ENABLE** compiler flag to '0u' in the *makefile*. SCB4 of the EZ-USB&trade; FX2G3 device is used as UART with a baud rate of 921,600 to send out log messages through the P11.0 pin.
+
+Debug the code example by setting debug levels for the UART logs. Set the **DEBUG_LEVEL** macro in the *main.c* file with the following values for debugging.
 
 **Table 1. Debug values**
 
 Macro value     |    Description
 :-------------  | :------------
-1u             | Enable error messages
-2u               | Enable warning messages
-3u             | Enable info messages
-4u                | Enable all messages
+1u              | Enable error messages
+2u              | Enable warning messages
+3u              | Enable info messages
+4u              | Enable all messages
 
 <br>
 
@@ -186,26 +188,30 @@ Macro value     |    Description
 
 This code example demonstrates how to download the FPGA bin binaries to the SPI flash device available on the FPGA add-on board connected to the FX2G3 104LGA kit baseboard using the USB interface. The FPGA add-on board has AT45DB flash. This application uses various low-performance peripherals to interface with the system such as:
 
-- SMIF (in x1 or single mode) interface for programming the external SPI flash
-- Enable debug prints over CDC using USBFS block on FX2G3
+- SMIF (in x4 or quad mode) interface for programming the external SPI flash.
+
+  > **Note:** If the REV02 kit is used, FPGA is configured using SMIF in x4 or quad mode else (for REV01) FPGA is configured using SMIF in x1 or single mode.
+
+- Enable debug prints over CDC using USBFS block on EZ-USB&trade; FX2G3 device.
 
 
 ### Features of the application
 
-- **USB specifications:** USB 2.0 (both Hi-Speed and Full-Speed)
-- Supports vendor commands for handling various flash operations
+- **USB specifications:** USB 2.0 (both Hi-Speed and Full-Speed).
+- Supports vendor commands for handling various flash operations.
 
 
 ### Datapath
 
-- The device enumerates as a vendor-specific USB device with only control endpoint
-- The application supports vendor commands for handling various flash operations
-- The application supports programming to the external SPI flash connected to FX2G3 SPICS0 (P6_1)
+- The device enumerates as a vendor-specific USB device with only control endpoint.
+- The application supports vendor commands for handling various flash operations.
+- The application supports programming to the external SPI flash connected to EZ-USB&trade; FX2G3 SPICS0 (P6_1).
 
 
 ### Application workflow
 
 The application flow involves three steps - Initialization, USB device enumeration, and external flash programming.
+
 
 #### Initialization
 
@@ -235,26 +241,31 @@ During initialization, the following steps are performed:
    - 0xB3 - Reads from flash
    - 0xB4 - Erases flash sector
    - 0xB5 - Checks busy status
-- Using the FX Control Center application, the FPGA binary is sent to FX2G3 using the supported vendor commands.
-- The application handles writes binary data received over the control endpoint to the external flash connected over SMIF interface.
+- Using the EZ-USB&trade; FX Control Center application, the FPGA binary is sent to EZ-USB&trade; FX2G3 using the supported vendor commands.
+- The application handles writes binary data received over the control endpoint to the external flash connected over the SMIF interface.
 
 
 ### Compile-time configurations
 
 This application's functionality can be customized through the compile-time parameters that can be turned ON or OFF through the *makefile*.
 The application uses the GNU Arm&reg; 11.3 toolchain, which is part of the ModusToolbox&trade; installation for compilation.
-- Run the `make` command to compile the application and generate a USB bootloader compatible binary. This binary can be programmed to the FX2G3 device using the EZ-USB&trade; Control Center application.
-- Run the `make BLENABLE=no` command to compile the application and generate the standalone binary. This binary can be programmed onto the FX2G3 device through the SWD interface using the OpenOCD tool. For more details, see the [EZ-USB&trade; FX2G3 SDK user guide](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/#main-features-comparison).
+- Run the `make` command or build the project in your IDE to compile the application and generate a USB bootloader compatible binary. This binary can be programmed to the EZ-USB&trade; FX2G3 device using the EZ-USB&trade; Control Center application.
+- Run the `make BLENABLE=no` command or set the variable in the **Makefile** to compile the application and generate the standalone binary. This binary can be programmed onto the EZ-USB&trade; FX2G3 device through the SWD interface using the OpenOCD tool. For more details, see the [EZ-USB&trade; FX2G3 SDK user guide](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/#main-features-comparison).
+- Run the `make REV02=no` command or set the variable in the **Makefile** to compile the application and generate the binary compatible with REV01 version of the EZ-USB&trade; FX2G3 Kit.
 
 **Table 2. Macro description**
-Macro name        | Description                               | Allowed values
+
+Flag name         | Description                               | Allowed values
 :-------------    | :------------                             | :--------------
 USBFS_LOGS_ENABLE | Enable debug logs through USBFS port      | 1u for debug logs over USBFS. <br> 0u for debug logs over UART (SCB4).
+
 <br>
+
 
 ### Application files
 
 **Table 3. Application file description**
+
 File                                            | Description   
 :-------------                                  | :------------                         
 *usb_app.c*                                       | C source file implementing USB handling for flash loader application logic
@@ -265,6 +276,7 @@ File                                            | Description
 *spi.h*                                           | Header file with SMIF application constants and the function definitions
 *cm0_code.c*                                      | CM0 initialization code
 *Makefile*                                        | GNU make compliant build script for compiling this example
+
 <br>
 
 
@@ -273,13 +285,12 @@ File                                            | Description
 Resources  | Links
 -----------|----------------------------------
 Code examples  | [Using ModusToolbox&trade;](https://github.com/Infineon/Code-Examples-for-ModusToolbox-Software) on GitHub
-Device documentation | [FX2G3 datasheets](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/#!?fileId=8ac78c8c90530b3a01909c03f29537e0)
-Development kits | Select your kits from the [Evaluation board finder](https://www.infineon.com/cms/en/design-support/finder-selection-tools/product-finder/evaluation-board)
+Device documentation | [EZ-USB&trade; FX2G3 datasheets](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/#!?fileId=8ac78c8c90530b3a01909c03f29537e0)
+Development kits | Select your kits from the [Evaluation board finder](https://www.infineon.com/cms/en/design-support/finder-selection-tools/product-finder/evaluation-board).
 Libraries on GitHub | [mtb-pdl-cat1](https://github.com/Infineon/mtb-pdl-cat1) – Peripheral Driver Library (PDL) and docs
 Middleware on GitHub  | [usbfxstack](https://github.com/Infineon/usbfxstack) – USBFXStack middleware library and docs
-Tools  | [ModusToolbox&trade;](https://www.infineon.com/modustoolbox) – ModusToolbox&trade; software is a collection of easy-to-use libraries and tools enabling rapid development with Infineon MCUs for applications ranging from wireless and cloud-connected systems, edge AI/ML, embedded sense and control, to wired USB connectivity using PSoC&trade; Industrial/IoT MCUs, AIROC&trade; Wi-Fi and Bluetooth&reg; connectivity devices, XMC&trade; Industrial MCUs, and EZ-USB&trade;/EZ-PD&trade; wired connectivity controllers. ModusToolbox&trade; incorporates a comprehensive set of BSPs, HAL, libraries, configuration tools, and provides support for industry-standard IDEs to fast-track your embedded application development.
+Tools  | [ModusToolbox&trade;](https://www.infineon.com/modustoolbox) – ModusToolbox&trade; software is a collection of easy-to-use libraries and tools enabling rapid development with Infineon MCUs for applications ranging from wireless and cloud-connected systems, edge AI/ML, embedded sense and control, to wired USB connectivity using PSOC&trade; Industrial/IoT MCUs, AIROC&trade; Wi-Fi and Bluetooth&reg; connectivity devices, XMC&trade; Industrial MCUs, and EZ-USB&trade;/EZ-PD&trade; wired connectivity controllers. ModusToolbox&trade; incorporates a comprehensive set of BSPs, HAL, libraries, configuration tools, and provides support for industry-standard IDEs to fast-track your embedded application development.
 
-> **Note:** For more information about the software modules and configuration options, see the [EZ-USB&trade; FX2G3 SDK user guide](https://www.infineon.com/cms/en/product/promopages/ez-usb-fx2g3/#main-features-comparison).
 <br>
 
 
@@ -296,6 +307,7 @@ Document title: *CE240690* – *EZ-USB&trade; FX2G3: Flash loader application*
  Version | Description of change
  ------- | ---------------------
  1.0.0   | New code example
+ 1.0.1   | Updated for REV02 Kit
 <br>
 
 

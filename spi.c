@@ -25,9 +25,21 @@
 *******************************************************************************/
 
 #include "spi.h"
+#include "usb_app.h"
 
 /* SMIF context*/
 cy_stc_smif_context_t spiContext;
+cy_en_smif_txfr_width_t   glCommandWidth[NUM_SPI_FLASH]     = {CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_QUAD};
+cy_en_smif_txfr_width_t   glReadWriteWidth[NUM_SPI_FLASH]   = {CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_OCTAL};
+uint8_t glSlaveSelectIndex[NUM_SPI_FLASH] = {CY_SMIF_SLAVE_SELECT_0, CY_SMIF_SLAVE_SELECT_1, (CY_SMIF_SLAVE_SELECT_0 | CY_SMIF_SLAVE_SELECT_1)};
+cy_en_flash_index_t glFlashMode = SPI_FLASH_0;
+#if !FLASH_AT45D
+static cy_stc_cfi_flash_map_t glCfiFlashMap[NUM_SPI_FLASH];
+#endif /* !FLASH_AT45D */
+
+HBDMA_BUF_ATTRIBUTES uint8_t readBuffer[MAX_BUFFER_SIZE];
+HBDMA_BUF_ATTRIBUTES uint8_t writeBuffer[MAX_BUFFER_SIZE];
+
 static const cy_stc_smif_config_t spiConfig =
 {
     .mode = (uint32_t)CY_SMIF_NORMAL,                       /* Normal mode operation */
@@ -44,7 +56,6 @@ static cy_en_smif_status_t Cy_SPI_AddressToArray(uint32_t value, uint8_t *byteAr
     {
       return CY_SMIF_BAD_PARAM;
     }
-
     do
     {
       size--;
@@ -56,19 +67,62 @@ static cy_en_smif_status_t Cy_SPI_AddressToArray(uint32_t value, uint8_t *byteAr
 }
 
 /* SPI Write enable*/
-static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_smif_slave_select_t slaveSelect)
+static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+#if !FLASH_AT45D
+    uint8_t statusVal = 0;
+#endif /* !FLASH_AT45D */
+    
+    if(flashIndex == DUAL_SPI_FLASH)
+    {
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
+    }
+
     status = Cy_SMIF_TransmitCommand(SMIF_HW,
-                                     CY_SPI_WRITE_ENABLE_CMD,
-                                     CY_SMIF_WIDTH_SINGLE,
-                                     NULL,
-                                     CY_SMIF_CMD_WITHOUT_PARAM,
-                                     CY_SMIF_WIDTH_NA,
-                                     (cy_en_smif_slave_select_t)slaveSelect,
-                                     CY_SMIF_TX_LAST_BYTE,
-                                     &spiContext);
+            CY_SPI_WRITE_ENABLE_CMD,
+            glCommandWidth[flashIndex],
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_LAST_BYTE,
+            &spiContext);
     ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+#if !FLASH_AT45D
+    /* Check if WRITE_ENABLE LATCH is set */
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_STATUS_READ_CMD,
+            glCommandWidth[flashIndex],
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW,
+            &statusVal,
+            1u,
+            glReadWriteWidth[flashIndex],
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    if(statusVal & CY_SPI_WRITE_ENABLE_LATCH_MASK)
+    {
+        status = CY_SMIF_SUCCESS;
+        DBG_APP_TRACE("Write Enable Passed\r\n");
+    }
+    else
+    {
+        status = CY_SMIF_BUSY;
+        DBG_APP_ERR("Write Enable failed\r\n");
+    }
+#endif /* !FLASH_AT45D */
+
     return status;
 }
 
@@ -259,138 +313,83 @@ static cy_en_gpio_status_t Cy_SPI_ConfigureSMIFPins(bool init)
     return status;
 }
 
-/* Function for Chip erase */
-cy_en_smif_status_t Cy_SPI_ChipErase(cy_en_smif_slave_select_t slaveSelect) 
-{
-    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
-
-    /* Commands for chip erase */
-    uint8_t chipEraseCmd[] = {0xC7, 0x94, 0x80, 0x9A}; 
-
-    /* Send the erase command sequence */ 
-    status = Cy_SMIF_TransmitCommand(
-        SMIF_HW,                         /* SMIF instance */ 
-        chipEraseCmd[0],                 /* First command byte */ 
-        CY_SMIF_WIDTH_SINGLE,            /* Command transfer width */ 
-        &chipEraseCmd[1],                /* Remaining command bytes */ 
-        sizeof(chipEraseCmd) - 1,        /* Command parameter size */ 
-        CY_SMIF_WIDTH_SINGLE,            /* Command parameter transfer width */ 
-        slaveSelect,                     /* Slave select */ 
-        CY_SMIF_TX_LAST_BYTE,            /* Complete transfer */ 
-        &spiContext                     /* Context */ 
-    );
-
-    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
-    return status;
-}
-
 /* Function to read device ID */
-cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_smif_slave_select_t slaveSelect)
+cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
 
-    status = Cy_SMIF_TransmitCommand(SMIF_HW,
-                            CY_SPI_READ_ID_CMD,
-                            CY_SMIF_WIDTH_SINGLE,
-                            NULL,
-                            CY_SMIF_CMD_WITHOUT_PARAM,
-                            CY_SMIF_WIDTH_NA,
-                            (cy_en_smif_slave_select_t)slaveSelect,
-                            CY_SMIF_TX_NOT_LAST_BYTE,
-                            &spiContext);
-    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
-
-    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, CY_FLASH_ID_LENGTH, CY_SMIF_WIDTH_SINGLE, &spiContext);
-    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
-    return status;
-}
-
-/* Function to disable sector protection */
-cy_en_smif_status_t Cy_SPI_DisableSectorProtection(cy_en_smif_slave_select_t slaveSelect) 
-{
-    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
-
-    /* Commands to disable sector protection */
-    uint8_t disableProtectionCmd[] = {0x3D, 0x2A, 0x7F, 0xCF}; 
-
-    /* Send the disable protection command sequence */
-    status = Cy_SMIF_TransmitCommand(
-        SMIF_HW,                         
-        disableProtectionCmd[0],         
-        CY_SMIF_WIDTH_SINGLE,            
-        &disableProtectionCmd[1],        
-        sizeof(disableProtectionCmd) - 1,
-        CY_SMIF_WIDTH_SINGLE,            
-        slaveSelect,                     
-        CY_SMIF_TX_LAST_BYTE,            
-        &spiContext                     
-    );
-
-    if (status != CY_SMIF_SUCCESS) {
-        DBG_APP_ERR("Error: TransmitCommand\r\n");
-        return status;
+    if(flashIndex == DUAL_SPI_FLASH)
+    {
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
     }
 
-    /* Deselect and reselect the device to apply changes */
-    Cy_SMIF_Disable(SMIF_HW);
-    Cy_SysLib_DelayUs(10); 
-    Cy_SMIF_Enable(SMIF_HW, &spiContext);
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_READ_ID_CMD,
+            glCommandWidth[flashIndex],
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
 
-    return CY_SMIF_SUCCESS;
+    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, CY_FLASH_ID_LENGTH, glReadWriteWidth[flashIndex], &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    return status;
 }
 
 /* Function to check busy status of flash */
-bool Cy_SPI_IsMemBusy(cy_en_smif_slave_select_t slaveSelect)
+bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
-    uint8_t statusReg = 0;
-    bool isBusy = true;
-    
+    uint8_t statusVal;
 
     /* Send status register read command */
-    status = Cy_SMIF_TransmitCommand(SMIF_HW,
-                                     CY_SPI_STATUS_READ_CMD, 
-                                     CY_SMIF_WIDTH_SINGLE,
-                                     NULL,
-                                     CY_SMIF_CMD_WITHOUT_PARAM, 
-                                     CY_SMIF_WIDTH_NA,
-                                     slaveSelect,
-                                     CY_SMIF_TX_NOT_LAST_BYTE,
-                                     &spiContext);
-
-    if (status != CY_SMIF_SUCCESS) {
-        DBG_APP_ERR("Error: Read Command status=0x%x\r\n", status);
-        return true; /* Return true to indicate an error occurred */
-    }
-
-    if (CY_SMIF_SUCCESS == status)
+    if(flashIndex == DUAL_SPI_FLASH)
     {
-        status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW,
-                                             &statusReg,
-                                             1u,
-                                             CY_SMIF_WIDTH_SINGLE,
-                                             &spiContext);
-        if (status != CY_SMIF_SUCCESS) {
-            DBG_APP_ERR("Error: Read Data cmd status=0x%x, statusReg=0x%x\r\n", statusReg, status);
-            return true; /* Return true to indicate an error occurred */
-        }
-        else
-        {
-            Cy_SysLib_DelayUs(10);
-        }    
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
     }
 
-    /* b7: Ready/busy status (1 = ready, 0 = busy) */
-    isBusy = !(statusReg & 0x80);
-    return isBusy;
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_STATUS_READ_CMD,
+            glCommandWidth[flashIndex],
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW,
+            &statusVal,
+            1u,
+            glReadWriteWidth[flashIndex],
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    DBG_APP_TRACE("Cy_SPI_IsMemBusy %x\r\n",statusVal);
+
+    return ((statusVal & CY_SPI_WIP_MASK) == CY_SPI_WIP_STATUS);
 }
 
+
 /* Function to enable SPI block */
-cy_en_smif_status_t Cy_SPI_Start(cy_en_smif_slave_select_t slaveSelect)
+cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
     uint32_t programWait = 0;
-    
+
+    pAppCtxt->qspiWriteBuffer = writeBuffer;
+    pAppCtxt->qspiReadBuffer = readBuffer;
+
+    memset(pAppCtxt->qspiWriteBuffer, 0, MAX_BUFFER_SIZE);
+    memset(pAppCtxt->qspiReadBuffer, 0, MAX_BUFFER_SIZE);
+ 
     /* SPI is connected to CLK_HF1. As per current clock configuration in Cy_Fx2g3_clk_init, CLK_HF1 is connected Clock path #1 (PLL#0) at 150 MHz  */
     Cy_SysClk_ClkHfDisable(CY_SYSCLK_SPI_CLK_HF1);
     Cy_SysClk_ClkHfSetSource(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_IN_CLKPATH1);
@@ -408,8 +407,8 @@ cy_en_smif_status_t Cy_SPI_Start(cy_en_smif_slave_select_t slaveSelect)
     
     Cy_SMIF_Enable(SMIF_HW, &spiContext);
 
-    while(Cy_SPI_IsMemBusy(slaveSelect)) { 
-        if(programWait++ >= CY_APP_SPI_PROGRAM_TIMEOUT_US) 
+    while(Cy_SPI_IsMemBusy(flashIndex)) { 
+        if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US) 
         { 
             status = CY_SMIF_EXCEED_TIMEOUT; 
             DBG_APP_ERR("Error: Program Timeout\r\n"); 
@@ -433,73 +432,344 @@ cy_en_smif_status_t Cy_SPI_Stop(void)
     return status;
 }
 
+#if !FLASH_AT45D
+
+/*
+Function     : Cy_SPI_FlashReset ()
+Description  : Send reset command to selected flash.   
+Parameters  :  cy_en_flash_index_t flashIndex 
+Return      :  cy_en_smif_status_t  
+
+*/
+static cy_en_smif_status_t Cy_SPI_FlashReset(cy_en_flash_index_t flashIndex)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_RESET_ENABLE_CMD,
+            CY_SMIF_WIDTH_QUAD,
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_SW_RESET_CMD,
+            CY_SMIF_WIDTH_QUAD,
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    /*tRPH delay SFS256 Flash*/
+    Cy_SysLib_DelayUs(50);
+
+    return status;
+}
+
+/*
+ * Function     :   Cy_SPI_ReadCFIMap  
+ * Description  :   Read Common Flash Interface (CFI) Table
+ * Parameters   :   cy_stc_cfi_flash_map_t *cfiFlashMap, cy_en_flash_index_t flashIndex
+ * Return       :   cy_en_smif_status_t  
+ */
+
+static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMap, cy_en_flash_index_t flashIndex)
+{
+    uint8_t sectorIndex = 0;
+    uint8_t eraseRegionIndex = 0;
+    uint8_t rxBuffer[CY_CFI_TABLE_LENGTH] = {0};
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+
+    if(flashIndex == DUAL_SPI_FLASH)
+    {
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
+    }
+
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_READ_ID_CMD,
+            glCommandWidth[flashIndex],
+            NULL,
+            CY_SMIF_CMD_WITHOUT_PARAM,
+            CY_SMIF_WIDTH_NA,
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, CY_CFI_TABLE_LENGTH, glReadWriteWidth[flashIndex], &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    cfiFlashMap->deviceSizeFactor = rxBuffer[CY_CFI_DEVICE_SIZE_OFFSET];
+    cfiFlashMap->deviceSize = (uint32_t)(1u << cfiFlashMap->deviceSizeFactor);
+    DBG_APP_INFO("DeviceSize = 0x%x[%d]\r\n", (cfiFlashMap->deviceSize), (cfiFlashMap->deviceSize));
+
+    /* Parse the CFI buffer and understand possible memory array layouts */
+    cfiFlashMap->numEraseRegions = rxBuffer[CY_CFI_NUM_ERASE_REGION_OFFSET];
+    DBG_APP_INFO("Number of erase regions = %d\r\n", cfiFlashMap->numEraseRegions);
+
+    if(cfiFlashMap->numEraseRegions < CY_CFI_TABLE_LENGTH)
+    {
+        //The part has multiple erase layouts, possibly because it supports hybrid layout
+        for(eraseRegionIndex = 0 , sectorIndex = 0;
+                eraseRegionIndex < (cfiFlashMap->numEraseRegions);
+                eraseRegionIndex++, sectorIndex += CY_CFI_ERASE_REGION_SIZE_INFO_SIZE)
+        {
+            cfiFlashMap->memoryLayout[eraseRegionIndex].numSectors = 1 + (rxBuffer[sectorIndex + CY_CFI_ERASE_NUM_SECTORS_OFFSET] |
+                    (rxBuffer[sectorIndex + CY_CFI_ERASE_NUM_SECTORS_OFFSET + 1] << 8));
+
+            cfiFlashMap->memoryLayout[eraseRegionIndex].sectorSize = 256 * (rxBuffer[sectorIndex + CY_CFI_ERASE_SECTOR_SIZE_OFFSET] |
+                    (rxBuffer[sectorIndex + CY_CFI_ERASE_SECTOR_SIZE_OFFSET + 1] << 8));
+            if(eraseRegionIndex)
+            {
+                cfiFlashMap->memoryLayout[eraseRegionIndex].startingAddress = (cfiFlashMap->memoryLayout[eraseRegionIndex - 1].startingAddress +
+                        cfiFlashMap->memoryLayout[eraseRegionIndex - 1].sectorSize *
+                        cfiFlashMap->memoryLayout[eraseRegionIndex - 1].numSectors);
+            }
+            else
+            {
+                cfiFlashMap->memoryLayout[eraseRegionIndex].startingAddress = 0;
+            }
+
+            cfiFlashMap->memoryLayout[eraseRegionIndex].lastAddress = cfiFlashMap->memoryLayout[eraseRegionIndex].startingAddress +
+                (cfiFlashMap->memoryLayout[eraseRegionIndex].numSectors * cfiFlashMap->memoryLayout[eraseRegionIndex].sectorSize) - 1;
+
+            if(cfiFlashMap->memoryLayout[eraseRegionIndex].sectorSize == 0x1000)
+            {
+                cfiFlashMap->num4KBParameterRegions++;
+            }
+
+            DBG_APP_INFO("Erase region:%d, numSectors=%d, sectorSize=0x%x, startingAddress=0x%x\r\n",eraseRegionIndex,
+                    cfiFlashMap->memoryLayout[eraseRegionIndex].numSectors,
+                    cfiFlashMap->memoryLayout[eraseRegionIndex].sectorSize,
+                    cfiFlashMap->memoryLayout[eraseRegionIndex].startingAddress);
+        }
+    }
+    return status;
+}
+
+/* Initialize the SPI Flash - 
+ * Quad Mode - Data in x4 mode, Command in x1 mode
+ * QPI Mode - Data in x4 mode, Command in x4 mode
+ *
+ * QPI enabled implies Quad enable.
+ *
+ * Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
+ * Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
+ * */
+cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    uint8_t flashID[CY_FLASH_ID_LENGTH]={0};
+
+    status = Cy_SPI_FlashReset(flashIndex);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    status = Cy_SPI_ReadCFIMap(&glCfiFlashMap[flashIndex], flashIndex);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    Cy_SPI_ReadID(flashID, flashIndex);
+    
+    return status;
+}
+
+/*
+Function     : Cy_SPI_UniformSectorErase ()
+Description :  Send the uniform sector erase command for all non-4KB sectors. 
+               Note that this command has no effect on 4KB-sized sectors.
+Parameters  :  cy_en_flash_index_t flashIndex, uint32_t address 
+Return      :  cy_en_smif_status_t  
+
+*/
+
+static cy_en_smif_status_t Cy_SPI_UniformSectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    if(flashIndex == DUAL_SPI_FLASH)
+    {
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
+    }
+
+    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT];
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);
+
+    status = Cy_SPI_WriteEnable(flashIndex);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    if (status == CY_SMIF_SUCCESS)
+    {
+        status =  Cy_SMIF_TransmitCommand(SMIF_HW,
+                CY_SPI_SECTOR_ERASE_CMD,
+                glCommandWidth[flashIndex],
+                addrArray,
+                SPI_ADDRESS_BYTE_COUNT,
+                glCommandWidth[flashIndex],
+                (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+                CY_SMIF_TX_LAST_BYTE,
+                &spiContext);
+
+        DBG_APP_INFO("Uniform sector erase from 0x%x\r\n", address);
+        ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    }
+    return status;
+}
+
+/*
+Function     : Cy_SPI_HybridSectorErase ()
+Description :  Send hybrid sector erase command for the 4KB sectors. 
+Parameters  :  cy_en_flash_index_t flashIndex, uint32_t address 
+Return      :  cy_en_smif_status_t  
+
+*/
+
+static cy_en_smif_status_t Cy_SPI_HybridSectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT];
+    
+    if(flashIndex == DUAL_SPI_FLASH)
+    {
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
+    }
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);
+    
+    status = Cy_SPI_WriteEnable(flashIndex);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    
+    if (status == CY_SMIF_SUCCESS)
+    {
+        status =  Cy_SMIF_TransmitCommand(SMIF_HW,
+                CY_SPI_HYBRID_SECTOR_ERASE_CMD,
+                glCommandWidth[flashIndex],
+                addrArray,
+                SPI_ADDRESS_BYTE_COUNT,
+                glCommandWidth[flashIndex],
+                (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+                CY_SMIF_TX_LAST_BYTE,
+                &spiContext);
+        DBG_APP_TRACE("4KB region erase from 0x%x\r\n", address);
+        ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    }
+    return status;
+}
+#endif
+
 /* Function to erase flash sector */
-cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_smif_slave_select_t slaveSelect, uint32_t address)
+cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
 {
 #if FLASH_AT45D
     /* Skip erase and return. Erase is performed by write command */
     return CY_SMIF_SUCCESS;
 #else
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    uint32_t index = 0;
+    uint32_t hybridIndex = 0;
+    uint32_t numEraseRegions = glCfiFlashMap[flashIndex].numEraseRegions;
+    uint32_t programWait = 0;
 
-    DBG_APP_TRACE("SectorEraseAddr: 0x%x,",address);
-    cy_en_smif_status_t status;
-
-    unsigned int sectorNumber = address >> 16;  /*Shifting right by 16 bits to extract the sector number */
-    DBG_APP_TRACE("sectorNo: 0x%x,",sectorNumber);
-
-    uint32_t flashAddr = sectorNumber << 10;    /* Masking the lower 16 bits and left shifting by 10 */
-    DBG_APP_TRACE("flashAddr: 0x%x\r\n",flashAddr);
-
-    /* Step 2: Send Sector Erase Command with Address */
-    Cy_SysLib_DelayUs(10);
-
-    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT];
-    Cy_SPI_AddressToArray(flashAddr, addrArray, SPI_ADDRESS_BYTE_COUNT);
-    status = Cy_SMIF_TransmitCommand(SMIF_HW,
-                            CY_SPI_SECTOR_ERASE_CMD,
-                            CY_SMIF_WIDTH_SINGLE,
-                            addrArray,
-                            SPI_ADDRESS_BYTE_COUNT,
-                            CY_SMIF_WIDTH_SINGLE,
-                            slaveSelect,
-                            CY_SMIF_TX_NOT_LAST_BYTE,
-                            &spiContext);
-
-    if (status != CY_SMIF_SUCCESS)
+    if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("Error: Erase cmd status: 0x%x\r\n", status);
-        return status;
+        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
     }
 
-    Cy_SysLib_DelayUs(100);
-    return CY_SMIF_SUCCESS;
+    if(address >= glCfiFlashMap[flashIndex].deviceSize)
+    {
+        DBG_APP_ERR("[%s]Invalid Address.\r\n",__func__);
+        return CY_SMIF_BAD_PARAM;
+    }
+
+    /* Check if memory has any 4KB sector regions */
+    if(glCfiFlashMap[flashIndex].num4KBParameterRegions)
+    {
+        for(index = 0; index < numEraseRegions; index++)
+        {
+
+            /* Check if the address to be erased is in a 4KB Hybrid region */
+            if((address >= glCfiFlashMap[flashIndex].memoryLayout[index].startingAddress) && (address <= glCfiFlashMap[flashIndex].memoryLayout[index].lastAddress)
+                    && (glCfiFlashMap[flashIndex].memoryLayout[index].sectorSize == 0x1000))
+            {
+                /* The address is present in a 4 KB sector region. Erase the entire 4KB region. */
+                for(hybridIndex = 0; hybridIndex < glCfiFlashMap[flashIndex].memoryLayout[index].numSectors; hybridIndex++)
+                {
+                    status = Cy_SPI_HybridSectorErase(flashIndex, address + (hybridIndex * 0x1000));
+                    if(status == CY_SMIF_SUCCESS)
+                    {
+                        programWait = 0;
+                        while(Cy_SPI_IsMemBusy(flashIndex))
+                        {
+                            if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
+                            {
+                                status =  CY_SMIF_EXCEED_TIMEOUT;
+                                DBG_APP_ERR(" Cy_SPI_HybridSectorErase TIMEOUT!! %x\r\n",status);
+                                break;
+                            }
+                            else
+                            {
+                                Cy_SysLib_DelayUs(1);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        DBG_APP_ERR(" Cy_SPI_HybridSectorErase failed %x\r\n",status);
+                    }
+                }
+            }
+        }
+    }
+
+    /* Do a uniform sector erase command to erase all non-4KB sector areas. This command has no effect on the 4KB regions. */
+    status = Cy_SPI_UniformSectorErase(flashIndex, address);
+    programWait = 0;
+    while(Cy_SPI_IsMemBusy(flashIndex))
+    {
+        if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
+        {
+            status =  CY_SMIF_EXCEED_TIMEOUT;
+            DBG_APP_ERR(" Cy_SPI_HybridSectorErase TIMEOUT!! %x\r\n",status);
+            break;
+        }
+        else
+        {
+            Cy_SysLib_DelayUs(1);
+        }
+    }
+    return status;
 #endif
 }
 
 /* Write to Flash page*/
-cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_smif_slave_select_t slaveSelect)
+cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_flash_index_t flashIndex)
 {
-    uint8_t addrArray[3]; 
+    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT]; 
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
     uint32_t programWait = 0;
 
-    Cy_SPI_AddressToArray(address, addrArray, 3);  /* Convert address to 3 bytes*/ 
-    status = Cy_SPI_WriteEnable(slaveSelect); 
-    Cy_SysLib_DelayUs(10);
-
+#if FLASH_AT45D
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT-1);  /* Convert address to 3 bytes*/ 
+    status = Cy_SPI_WriteEnable(flashIndex); 
     if(status == CY_SMIF_SUCCESS)
     {
         /* Step 1: Write to Buffer 1 using command 0x84 */
         status = Cy_SMIF_TransmitCommand(
-            SMIF_HW,                        /* SMIF instance */
-            0x84,                           /* Buffer 1 Write command */
-            CY_SMIF_WIDTH_SINGLE,           /* Command transfer width */
-            addrArray,                      /* Address array */
-            3,                              /* Address array size (3 bytes) */
-            CY_SMIF_WIDTH_SINGLE,           /* Address transfer width */
-            slaveSelect,                    /* Slave select */
-            CY_SMIF_TX_NOT_LAST_BYTE,       /* Not the last byte yet */
-            &spiContext                     /* Context */
+            SMIF_HW,                                                                    /* SMIF instance */
+            CY_SPI_PROGRAM_CMD,                                                         /* Buffer 1 Write command */
+            glCommandWidth[flashIndex],                                                 /* Command transfer width */
+            addrArray,                                                                  /* Address array */
+            SPI_ADDRESS_BYTE_COUNT-1,                                                   /* Address array size (3 bytes) */
+            glCommandWidth[flashIndex],                                                 /* Address transfer width */
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],                  /* Slave select */
+            CY_SMIF_TX_NOT_LAST_BYTE,                                                   /* Not the last byte yet */
+            &spiContext                                                                 /* Context */
         );
 
         if (status != CY_SMIF_SUCCESS)
@@ -511,8 +781,8 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
         status = Cy_SMIF_TransmitDataBlocking(
             SMIF_HW, 
             txBuffer, 
-            CY_APP_SPI_FLASH_PAGE_SIZE, 
-            CY_SMIF_WIDTH_SINGLE, 
+            CY_SPI_FLASH_PAGE_SIZE, 
+            glReadWriteWidth[flashIndex], 
             &spiContext
         );
 
@@ -526,15 +796,15 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
 
         /* Step 2: Transfer Buffer 1 to Main Memory */
         status = Cy_SMIF_TransmitCommand(
-            SMIF_HW,                        /* SMIF instance */
-            0x83,                           /* Buffer 1 to Main Memory Page Program With Built-In Erase command */
-            CY_SMIF_WIDTH_SINGLE,           /* Command transfer width */
-            addrArray,                      /* Address array */
-            3,                              /* Address array size (3 bytes) */
-            CY_SMIF_WIDTH_SINGLE,           /* Address transfer width */
-            slaveSelect,                    /* Slave select */ 
-            CY_SMIF_TX_LAST_BYTE,           /* Last byte */
-            &spiContext                     /* Context */
+            SMIF_HW,                                                                    /* SMIF instance */
+            CY_SPI_PROGRAM_CMD_1,                                                       /* Buffer 1 to Main Memory Page Program With Built-In Erase command */
+            glCommandWidth[flashIndex],                                                 /* Command transfer width */
+            addrArray,                                                                  /* Address array */
+            SPI_ADDRESS_BYTE_COUNT-1,                                                   /* Address array size (3 bytes) */
+            glCommandWidth[flashIndex],                                                 /* Address transfer width */
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],                  /* Slave select */ 
+            CY_SMIF_TX_LAST_BYTE,                                                       /* Last byte */
+            &spiContext                                                                 /* Context */
         );
         if (status != CY_SMIF_SUCCESS)
         {
@@ -542,9 +812,9 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
             return status;
         }
 
-        while(Cy_SPI_IsMemBusy(slaveSelect))
+        while(Cy_SPI_IsMemBusy(flashIndex))
         {
-            if(programWait++ >= CY_APP_SPI_PROGRAM_TIMEOUT_US)
+            if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
             {
                 status = CY_SMIF_EXCEED_TIMEOUT;
                 DBG_APP_ERR("Error: Program Timeout\r\n");
@@ -552,11 +822,56 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
             }
         }
     }
+#else
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);                    /* Convert address to 3 bytes*/ 
+    status = Cy_SPI_WriteEnable(flashIndex); 
+
+    if(status == CY_SMIF_SUCCESS)
+    {
+        status = Cy_SMIF_TransmitCommand(SMIF_HW,
+                CY_SPI_PROGRAM_CMD,
+                glCommandWidth[flashIndex],
+                addrArray,
+                SPI_ADDRESS_BYTE_COUNT,
+                glCommandWidth[flashIndex],
+                (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+                CY_SMIF_TX_NOT_LAST_BYTE,
+                &spiContext);
+        ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+        if(status == CY_SMIF_SUCCESS)
+        {
+            status = Cy_SMIF_TransmitDataBlocking(SMIF_HW, txBuffer, CY_SPI_FLASH_PAGE_SIZE,
+                    glReadWriteWidth[flashIndex], &spiContext);
+            if (status != CY_SMIF_SUCCESS)
+            {
+                DBG_APP_ERR("Error: Cy_SMIF_TransmitDataBlocking failed :0x%x\r\n", status);
+                return status;
+            }
+            else if(status == CY_SMIF_SUCCESS)
+            {
+                Cy_SysLib_DelayUs(100);
+                while(Cy_SPI_IsMemBusy(flashIndex))
+                {
+                    if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
+                    {
+                        status =  CY_SMIF_EXCEED_TIMEOUT;
+                        break;
+                    }
+                    else
+                    {
+                        Cy_SysLib_DelayUs(1);
+                    }
+                }
+            }
+            
+        }
+    }
+#endif /* FLASH_AT45D */
     return status;
 }
 
 /* Flash Write*/
-cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_smif_slave_select_t slaveSelect)
+cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex)
 {
     uint32_t pageIndex = 0;
     uint32_t spiAddress = address;
@@ -565,54 +880,73 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
 
     for(pageIndex = 0; pageIndex < numPages; pageIndex++)
     {
-        pageOffset = CY_APP_SPI_FLASH_PAGE_SIZE * pageIndex;
-        status = Cy_SPI_WritePage(spiAddress, txBuffer + pageOffset, slaveSelect);
+        pageOffset = CY_SPI_FLASH_PAGE_SIZE * pageIndex;
+        status = Cy_SPI_WritePage(spiAddress, txBuffer + pageOffset, flashIndex);
         if(status != CY_SMIF_SUCCESS)
         {
             DBG_APP_ERR("Error: Write page failed at address 0x%x\r\n", spiAddress);
             return status;
         }
 
-        spiAddress += CY_APP_SPI_FLASH_PAGE_SIZE;
+        spiAddress += CY_SPI_FLASH_PAGE_SIZE;
     }
 
     return status;
 }
 
 /* Read Flash*/
-cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_smif_slave_select_t slaveSelect)
+cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
-    uint8_t addrArray[4];                                      /*3 address bytes + 1 dummy byte */ 
+    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT];                                     
 
+#if FLASH_AT45D
     /* Convert address and add dummy byte */ 
-    Cy_SPI_AddressToArray(address, addrArray, 3);
-    addrArray[3] = 0x00;                                       /* Dummy byte for the read command */
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT-1);
+    addrArray[SPI_ADDRESS_BYTE_COUNT-1] = 0x00;                                            /* Dummy byte for the read command */
 
     status = Cy_SMIF_TransmitCommand(SMIF_HW,
-                                     0x0B,                     /* Read Data Bytes Low Frequency command*/
+                                     CY_SPI_READ_CMD,                                      /* Read Data Bytes Low Frequency command*/
                                      CY_SMIF_WIDTH_SINGLE,
                                      addrArray,
-                                     4,                        /* 3 address bytes + 1 dummy byte*/
-                                     CY_SMIF_WIDTH_SINGLE,
-                                     slaveSelect,
+                                     SPI_ADDRESS_BYTE_COUNT,                                /* 3 address bytes + 1 dummy byte*/
+                                     glReadWriteWidth[flashIndex],
+                                     (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
                                      CY_SMIF_TX_NOT_LAST_BYTE,
                                      &spiContext);
     
-    if (status != CY_SMIF_SUCCESS)
-    {
-        DBG_APP_ERR("Error: Cy_SPI_ReadOperation read cmd 0x%x\r\n", status);
-        return status;
-    }
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
 
     /* Receive the data into the rxBuffer*/ 
-    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, length, CY_SMIF_WIDTH_SINGLE, &spiContext);
+    status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, length, glReadWriteWidth[flashIndex], &spiContext);
     if (status != CY_SMIF_SUCCESS)
     {
         DBG_APP_ERR("Error: Cy_SPI_ReadOperation read data 0x%x\r\n", status);
         return status;
     }
-    
+
+#else
+
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_SPI_READ_CMD,
+            glCommandWidth[flashIndex],
+            addrArray,
+            SPI_ADDRESS_BYTE_COUNT,
+            glReadWriteWidth[flashIndex],
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    /* Receive the data into the rxBuffer*/ 
+    if(status == CY_SMIF_SUCCESS)
+    {
+        status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, length, glReadWriteWidth[flashIndex], &spiContext);
+        ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    }
+
+#endif /* FLASH_AT45D */ 
     return status;
 }
 

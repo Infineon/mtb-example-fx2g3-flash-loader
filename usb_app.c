@@ -51,7 +51,6 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
     cy_stc_usb_app_ctxt_t *pAppCtxt;
     cy_en_usb_endp_dir_t endpDir = CY_USB_ENDP_DIR_INVALID;
     cy_en_usbd_ret_code_t retStatus = CY_USBD_STATUS_SUCCESS;
-    cy_en_smif_status_t spiStatus = CY_SMIF_SUCCESS;
     bool isReqHandled = false;
     uint8_t   reqType;
     uint8_t bmRequest, bRequest, bTarget;
@@ -63,7 +62,9 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
     uint32_t  setupData1;
     uint32_t spiAddress = 0;
     uint32_t sector = 0;
-    uint32_t numPages = (CY_APP_SPI_MAX_USB_TRANSFER_SIZE) / (CY_APP_SPI_FLASH_PAGE_SIZE);
+    uint32_t numPages = (CY_APP_SPI_MAX_USB_TRANSFER_SIZE) / (CY_SPI_FLASH_PAGE_SIZE);
+    cy_en_flash_index_t glFlashMode = SPI_FLASH_0;
+    cy_en_smif_status_t smifStatus = CY_SMIF_SUCCESS;
 
     pAppCtxt = (cy_stc_usb_app_ctxt_t *)pApp;
 
@@ -254,8 +255,8 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Handle SPI vendor commands */
             if (bRequest == FLASH_CMD_CHECK_SPI_SUPPORT)
             {
+                DBG_APP_INFO("FLASH_CMD_CHECK_SPI_SUPPORT\r\n");
                 retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, fxFlashProg, sizeof(fxFlashProg));
-                ASSERT_NON_BLOCK(CY_USBD_STATUS_SUCCESS == retStatus, retStatus);
                 if(retStatus == CY_USBD_STATUS_SUCCESS)
                 {
                     DBG_APP_TRACE("Check flash prog done\r\n");
@@ -266,12 +267,13 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Check memory busy status */
             if (bRequest == FLASH_CMD_CHECK_STATUS)
             {
-                busyStat = Cy_SPI_IsMemBusy(glSlaveSelect);
-                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt,&busyStat, 1);
+                busyStat = Cy_SPI_IsMemBusy(SPI_FLASH_0);
+                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, &busyStat, 1);
+
                 ASSERT_NON_BLOCK(CY_USBD_STATUS_SUCCESS == retStatus, retStatus);
                 if(retStatus == CY_USBD_STATUS_SUCCESS)
                 {
-                    DBG_APP_TRACE("Check status done (%d)\r\n",busyStat);
+                    DBG_APP_INFO("Check status done (%d)\r\n",busyStat);
                     isReqHandled = true;
                 }
             }
@@ -279,9 +281,12 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Write to SPI flash */
             if ((bRequest == FLASH_CMD_FLASH_WRITE) && (wLength == CY_APP_SPI_MAX_USB_TRANSFER_SIZE))
             {
-                spiAddress = wIndex * CY_APP_SPI_MAX_USB_TRANSFER_SIZE;;
-                retStatus = Cy_USB_USBD_RecvEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)Ep0TestBuffer, wLength);
-                ASSERT_NON_BLOCK(CY_USBD_STATUS_SUCCESS == retStatus, retStatus);
+                DBG_APP_INFO("FLASH_CMD_FLASH_WRITE\r\n");
+                spiAddress = wIndex * (CY_APP_SPI_MAX_USB_TRANSFER_SIZE);
+                glFlashMode = SPI_FLASH_0;
+                DBG_APP_TRACE("SPI Write..Wlength=%d spiAddress = %d, wIndex=%d %d\r\n", wLength,spiAddress, wIndex, wValue);
+
+                retStatus = Cy_USB_USBD_RecvEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)pAppCtxt->qspiWriteBuffer, wLength);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
                 {
                     /* Wait until receive DMA transfer has been completed. */
@@ -294,29 +299,30 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                         Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt, 0x00, CY_USB_ENDP_DIR_IN, TRUE);
                         return;
                     }
-                    if (retStatus == CY_USBD_STATUS_SUCCESS)
-                    {
-                        spiStatus = Cy_SPI_WriteOperation(spiAddress, (uint8_t*)Ep0TestBuffer, wLength, numPages, glSlaveSelect);
-                        if(spiStatus == CY_SMIF_SUCCESS)
-                        {
-                            DBG_APP_TRACE("numPages = %d.Program %d->%d done\r\n",numPages, spiAddress,spiAddress+(CY_APP_SPI_MAX_USB_TRANSFER_SIZE-1));
-                            isReqHandled = true;
-                        }
-                    }
+                }
+                
+                if(retStatus == CY_USBD_STATUS_SUCCESS)
+                {
+                    smifStatus = Cy_SPI_WriteOperation(spiAddress, (uint8_t*)pAppCtxt->qspiWriteBuffer, wLength,numPages,
+                                                    glFlashMode);
+                    ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == smifStatus,smifStatus);
+                    DBG_APP_TRACE("numPages = %d.Program %d->%d done\r\n",numPages,spiAddress,spiAddress+(CY_APP_SPI_MAX_USB_TRANSFER_SIZE-1));
+                    isReqHandled = true;
                 }
             }
             /* Read from SPI flash */
             if ((bRequest == FLASH_CMD_FLASH_READ) && (wLength == CY_APP_SPI_MAX_USB_TRANSFER_SIZE))
-            {
-                spiAddress = wIndex * CY_APP_SPI_MAX_USB_TRANSFER_SIZE;
-                spiStatus = Cy_SPI_ReadOperation(spiAddress,(uint8_t*) Ep0TestBuffer , wLength, glSlaveSelect);
-                if(spiStatus == CY_SMIF_SUCCESS)
-                {
-                    DBG_APP_INFO("Read %d->%d done\r\n",spiAddress, spiAddress + wLength-1);
-                }
+            {               
+                spiAddress = wIndex * (CY_APP_SPI_MAX_USB_TRANSFER_SIZE);
+                glFlashMode = SPI_FLASH_0;
+                
+                DBG_APP_TRACE("SPI read..Windex=%d Wlength=%d spiAddress = %d\r\n",wIndex, wLength, spiAddress);
+                ASSERT_NON_BLOCK(wLength <= MAX_BUFFER_SIZE, wLength);
 
-                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)Ep0TestBuffer, wLength);
-                ASSERT_NON_BLOCK(CY_USBD_STATUS_SUCCESS == retStatus, retStatus);
+                smifStatus = Cy_SPI_ReadOperation(spiAddress, pAppCtxt->qspiReadBuffer, wLength,
+                                glFlashMode);
+                ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == smifStatus,smifStatus);
+                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, pAppCtxt->qspiReadBuffer, wLength);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
                 {
                     isReqHandled = true;
@@ -326,15 +332,21 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Sector Erase to SPI flash */
             if (bRequest == FLASH_CMD_FLASH_SECTOR_ERASE)
             {
+                DBG_APP_INFO("FLASH_CMD_FLASH_SECTOR_ERASE\r\n");
                 sector = wIndex & 0xFF;
                 spiAddress = sector * CY_APP_SPI_FLASH_ERASE_SIZE;
-                if(Cy_SPI_SectorErase (glSlaveSelect, spiAddress) == CY_SMIF_SUCCESS)
                 {
-                    Cy_USBD_SendAckSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                    DBG_APP_INFO("Erase sector %d done\r\n",wIndex & 0xFF);
-
+                    if((Cy_SPI_SectorErase(SPI_FLASH_0, spiAddress) == CY_SMIF_SUCCESS) )
+                    {
+                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                        DBG_APP_TRACE("SPI Erase Done\r\n");
+                        isReqHandled = true;
+                    }
+                    else
+                    {
+                        DBG_APP_ERR("SPI Erase failed\r\n");
+                    }
                 }
-                isReqHandled = true;
             }
 
             /* Read SPI ID */
@@ -342,9 +354,9 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             {
                 if(wIndex == 0)
                 {
-                    Cy_SPI_ReadID((uint8_t*)Ep0TestBuffer, glSlaveSelect);
+                    Cy_SPI_ReadID((uint8_t*)pAppCtxt->qspiReadBuffer,glFlashMode);
                 }
-                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)Ep0TestBuffer,CY_FLASH_ID_LENGTH);
+				retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)pAppCtxt->qspiReadBuffer,CY_FLASH_ID_LENGTH);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
                 {
                     isReqHandled = true;
@@ -381,19 +393,24 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
 {
     cy_stc_usb_app_ctxt_t *pAppCtxt;
     cy_stc_usbd_app_msg_t queueMsg;
-
-
     pAppCtxt = (cy_stc_usb_app_ctxt_t *)pTaskParam;
 
+    /* Enable USB-2 connection and wait until it is stable. */
+    vTaskDelay(250);
 
 #if FREERTOS_ENABLE
     BaseType_t xStatus;
     uint32_t idleLoopCnt = 0;
 
-    DBG_APP_INFO("ThreadActive\r\n");
+    Cy_SPI_Start(pAppCtxt,SPI_FLASH_0);
+    DBG_APP_INFO("Flash Init \n\r:");
 
-    /* Enable USB-3 connection and wait until it is stable. */
-    vTaskDelay(250);
+#if !FLASH_AT45D
+    Cy_SPI_FlashInit(SPI_FLASH_0, false, false);
+#endif /* !FLASH_AT45D */
+
+    /* Enable USB-2 connection and wait until it is stable. */
+    vTaskDelay(100);
 
     /* If VBus is present, enable the USB connection. */
     pAppCtxt->vbusPresent =
@@ -402,6 +419,8 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
     if (pAppCtxt->vbusPresent) {
         Cy_USB_ConnectionEnable(pAppCtxt);
     }
+
+    DBG_APP_INFO("ThreadActive\r\n");
 
     do {
 #if WATCHDOG_RESET_EN
@@ -544,13 +563,11 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
        
 
 #if FREERTOS_ENABLE
-#if 1
         /* create queue and register it to kernel. */
         pAppCtxt->xQueue = xQueueCreate(CY_USB_MSG_QUEUE_SIZE,
                                         CY_USB_MSG_SIZE);
         DBG_APP_INFO("CreatedQueue\r\n");
         vQueueAddToRegistry(pAppCtxt->xQueue, "MsgQueue");
-#endif
 
         /* Create task and check status to confirm task created properly. */
         status = xTaskCreate(Cy_USB_TaskHandler, "Task", 2048,
@@ -658,5 +675,42 @@ Cy_USB_AppSetupCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
 
 }   /* end of function. */
 
+void checkStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking)
+{
+    if (!condition)
+    {
+        /* Application failed with the error code status */
+        Cy_Debug_AddToLog(1, "Function %s failed at line %d with status = 0x%x\r\n", function, line, value);
+        if (isBlocking)
+        {
+            /* Loop indefinitely */
+            for (;;)
+            {
+            }
+        }
+    }
+}
 
+void checkStatusAndHandleFailure(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking, void (*failureHandler)(void))
+{
+    if (!condition)
+    {
+        /* Application failed with the error code status */
+        Cy_Debug_AddToLog(1, "Function %s failed at line %d with status = 0x%x\r\n", function, line, value);
+
+        if(failureHandler != NULL)
+        {
+            (*failureHandler)();
+        }
+
+
+        if (isBlocking)
+        {
+            /* Loop indefinitely */
+            for (;;)
+            {
+            }
+        }
+    }
+}
 

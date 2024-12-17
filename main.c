@@ -295,9 +295,6 @@ void Cy_USB_USBHSInit (void)
      */
     ConfigurePeripheralClocks();
 
-    /* Initialize the UART for logging. */
-    InitUart(LOGGING_SCB_IDX);
-
     /* For Bringup  this is required */
     MAIN_REG->CTRL = 0x81100003;
 
@@ -406,7 +403,17 @@ int main (void)
     Cy_USB_USBHSInit();
 
 #if DEBUG_INFRA_EN
+#if !USBFS_LOGS_ENABLE
+    /* Initialize the UART for logging. */
+    InitUart(LOGGING_SCB_IDX);
+#endif /* USBFS_LOGS_ENABLE */
+
     Cy_Debug_LogInit(&dbgCfg);
+#if FREERTOS_ENABLE
+    /* Create task for printing logs and check status. */
+    xTaskCreate(PrintTaskHandler, "PrintLogTask", 512, NULL, 5, &printLogTaskHandle);
+#endif /* FREERTOS_ENABLE */
+
     Cy_SysLib_Delay(500);
     Cy_Debug_AddToLog(1, "********** FX2G3: Flash Loader Application ********** \r\n");
 
@@ -414,11 +421,6 @@ int main (void)
     Cy_PrintVersionInfo("APP_VERSION: ", APP_VERSION_NUM);
     Cy_PrintVersionInfo("USBD_VERSION: ", USBD_VERSION_NUM);
     Cy_PrintVersionInfo("HBDMA_VERSION: ", HBDMA_VERSION_NUM);
-
-#if FREERTOS_ENABLE
-    /* Create task for printing logs and check status. */
-    xTaskCreate(PrintTaskHandler, "PrintLogTask", 512, NULL, 5, &printLogTaskHandle);
-#endif /* FREERTOS_ENABLE */
 #endif /* DEBUG_INFRA_EN */
 
     memset((void *)&usbdCtxt, 0, sizeof(cy_stc_usb_usbd_ctxt_t));
@@ -462,9 +464,7 @@ int main (void)
     appCtxt.usbConnectDone = false;
 
     Cy_USB_AppInit(&appCtxt, &usbdCtxt, pCpuDmacBase, pCpuDw0Base, pCpuDw1Base);
-    
-    /* Intialize SMIF block*/
-    Cy_SPI_Start(glSlaveSelect);
+
     
     /* Assume that VBus is present for now. */
     appCtxt.vbusPresent = true;
