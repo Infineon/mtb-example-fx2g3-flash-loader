@@ -2,11 +2,11 @@
 * \file spi.h
 * \version 1.0
 *
-* Header file with SMIF application constants and the function definitions
+* \details Header file with SMIF application constants and the function definitions
 *
 *******************************************************************************
 * \copyright
-* (c) (2024), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -31,8 +31,7 @@
 #include "cy_debug.h"
 #include "usb_app.h"
 
-#define ASSERT(condition, value)            Cy_App_CheckStatus(__func__, __LINE__, condition, value, true);
-
+/* Macros */
 #define SMIF_HW                           (SMIF0)
 #define CY_SYSCLK_SPI_CLK_HF1             (1)
 
@@ -122,6 +121,7 @@
 #define CY_CFI_TABLE_LENGTH                (0x56)
 
 
+/* Enums */
 /* Vendor commands sent by USB Host application (eg: control center)*/
 typedef enum cy_en_flashProgrammerVendorCmd_t
 {
@@ -141,6 +141,7 @@ typedef enum cy_en_flash_index_t
   NUM_SPI_FLASH,
 }cy_en_flash_index_t;
 
+/* Structs */
 typedef struct cy_stc_cfi_erase_block_info_t
 {
   uint32_t numSectors;
@@ -158,15 +159,93 @@ typedef struct cy_stc_cfi_flash_map_t
   uint32_t num4KBParameterRegions;
 }cy_stc_cfi_flash_map_t;
 
+/* Extern Variables */
 extern cy_stc_smif_context_t spiContext;
 
-cy_en_smif_status_t Cy_SPI_Stop(void);
+/* Function Prototypes */
+/**
+ * \name Cy_SPI_Start
+ * \brief Function to enable SPI block 
+ * \param pAppCtxt
+ * \param flashIndex
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_SPI_Stop
+ * \brief Function to stop the SPI block
+ * \param pAppCtxt application layer context pointer
+ * \param flashIndex flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_SPI_Stop(void);
+
+/**
+ * \name Cy_SPI_ReadID
+ * \brief Function to read device ID
+ * \param rxBuffer
+ * \param flashIndex
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_SPI_IsMemBusy
+ * \brief Function to check busy status of flash
+ * \param flashIndex
+ * \retval boolean true when busy, false when not busy
+ */
 bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_SPI_WriteOperation
+ * \brief Function to initiate flash write operation
+ * \param address flash address
+ * \param txBuffer Data buffer pointer
+ * \param length Length of data to write to flash
+ * \param numPages Number of Flash pages to write
+ * \param flashIndex flash index
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_SPI_ReadOperation
+ * \brief Function to initiate flash write operation
+ * \param address flash address
+ * \param rxBuffer Data buffer pointer
+ * \param length Length of data to read from flash
+ * \param flashIndex flash index
+ * \return status
+ */
 cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_SPI_SectorErase
+ * \brief Function to erase flash sector 
+ * \param flashIndex flash index
+ * \param address flash address
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t address);
-void Cy_App_CheckStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking);
+
+/**
+ * \name Cy_SPI_FlashInit
+ * \brief Function to initialize SPI Flash
+ * \details Quad Mode - Data in x4 mode, Command in x1 mode
+ *          QPI Mode - Data in x4 mode, Command in x4 mode
+ *
+ *          QPI enabled implies Quad enable.
+ *
+ *          Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
+ *          Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
+ *
+ * \param flashIndex SPI Flash Index
+ * \param quadEnable Quad Mode enable
+ * \param qpiEnable QPI mode enable
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable);
-#endif
+
+#endif /* _SPI_H_ */

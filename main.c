@@ -2,15 +2,15 @@
 * \file main.c
 * \version 1.0
 *
-* Description: This is the source code for the USB Flash Loader Application Example
-*              for ModusToolbox.
+* \details This is the source code for the USB Flash Loader Application Example
+*          for ModusToolbox.
 *
-* Related Document: See README.md
+*          See \ref ./README.md ["README.md"]
 *
 *
 *******************************************************************************
 * \copyright
-* (c) (2024), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -85,11 +85,14 @@ extern const uint8_t CyFxUSBProductDscr[];
 extern const uint8_t CyFxUSBDeviceQualDscr[];
 extern const uint8_t CyFxUSBBOSDscr[];
 
-#if FREERTOS_ENABLE
 extern void xPortPendSVHandler( void );
 extern void xPortSysTickHandler( void );
 extern void vPortSVCHandler( void );
 
+/**
+ * \name vPortSetupTimerInterrupt
+ * \retval None
+ */
 void vPortSetupTimerInterrupt(void)
 {
     /* Register the exception vectors. */
@@ -104,19 +107,13 @@ void vPortSetupTimerInterrupt(void)
     Cy_SysTick_Enable();
 }
 
-/*******************************************************************************
- * Function name: Cy_Fx2g3_InitPeripheralClocks
- ****************************************************************************//**
- *
- * Function used to enable clocks to different peripherals on the FX2G3 device.
- *
- * \param adcClkEnable
- * Whether to enable clock to the ADC in the USBSS block.
- *
- * \param usbfsClkEnable
- * Whether to enable bus reset detect clock input to the USBFS block.
- *
- *******************************************************************************/
+/**
+ * \name Cy_Fx2g3_InitPeripheralClocks
+ * \brief Function used to enable clocks to different peripherals on the FX2G3 device.
+ * \param adcClkEnable Whether to enable clock to the ADC in the USBSS block.
+ * \param usbfsClkEnable Whether to enable bus reset detect clock input to the USBFS block.
+ * \retval None
+ */
 void Cy_Fx2g3_InitPeripheralClocks (
         bool adcClkEnable,
         bool usbfsClkEnable)
@@ -138,18 +135,16 @@ void Cy_Fx2g3_InitPeripheralClocks (
     }
 }
 
-/*******************************************************************************
- * Function name: Cy_Fx2g3_OnResetInit
- ****************************************************************************//**
- *
- * This function performs initialization that is required to enable scatter
- * loading of data into the High BandWidth RAM during device boot-up. The FX2G3
- * device comes up with the High BandWidth RAM disabled and hence any attempt
- * to read/write the RAM will cause the processor to hang. The RAM needs to
- * be enabled with default clock settings to allow scatter loading to work.
- * This function needs to be called from Cy_OnResetUser.
- *
- *******************************************************************************/
+/**
+ * \name Cy_Fx2g3_OnResetInit
+ * \details This function performs initialization that is required to enable scatter
+ *          loading of data into the High BandWidth RAM during device boot-up. The FX2G3
+ *          device comes up with the High BandWidth RAM disabled and hence any attempt
+ *          to read/write the RAM will cause the processor to hang. The RAM needs to
+ *          be enabled with default clock settings to allow scatter loading to work.
+ * \note This function needs to be called from Cy_OnResetUser.
+ * \retval None
+ */
 void
 Cy_Fx2g3_OnResetInit (
         void)
@@ -164,18 +159,12 @@ Cy_Fx2g3_OnResetInit (
             (1UL << MAIN_REG_CTRL_NUM_SLOW_AHB_STALL_CYCLES_Pos) |
             (3UL << MAIN_REG_CTRL_DMA_SRC_SEL_Pos));
 }
-/*****************************************************************************
- * Function Name: ConfigurePeripheralClocks
- *****************************************************************************
- * Summary
- *  Configure the clock applied to USBFS IP block.
- *
- * Parameters:
- *  None
- *
- * Return:
- *  void
- ****************************************************************************/
+
+/**
+ * \name ConfigurePeripheralClocks
+ * \brief Configure the clock applied to USBFS IP block.
+ * \retval None
+ */
 void ConfigurePeripheralClocks()
 {
     /* Configure PERI 16 bit clock divider for 100 KHz operation and enable it. */
@@ -200,20 +189,12 @@ void PrintTaskHandler(void *pTaskParam)
     }
 }
 #endif /* DEBUG_INFRA_EN */
-#endif /* FREERTOS_ENABLE */
 
-/*****************************************************************************
- * Function Name: Cy_USB_HS_ISR
- ******************************************************************************
- * Summary:
- *  Handler for USB-HS Interrupts.
- *
- * Parameters:
- *  None
- *
- * Return:
- *  None
- *****************************************************************************/
+/**
+ * \name Cy_USB_HS_ISR
+ * \brief Handler for USB-HS Interrupts.
+ * \retval None
+ */
 void Cy_USB_HS_ISR(void)
 {
     if (Cy_USBHS_Cal_IntrHandler(&hsCalCtxt))
@@ -222,19 +203,13 @@ void Cy_USB_HS_ISR(void)
     }
 }
 
-/*****************************************************************************
- * Function Name: Cy_PrintVersionInfo
- ******************************************************************************
- * Summary:
- *  Function to print version information to UART console.
- *
- * Parameters:
- *  type: Type of version string.
- *  version: Version number including major, minor, patch and build number.
- *
- * Return:
- *  None
- *****************************************************************************/
+/**
+ * \name Cy_PrintVersionInfo
+ * \brief Function to print version information to UART console.
+ * \param type Type of version string.
+ * \param version Version number including major, minor, patch and build number.
+ * \retval None
+ */
 void Cy_PrintVersionInfo(const char *type, uint32_t version)
 {
     char tString[32];
@@ -265,101 +240,133 @@ void Cy_PrintVersionInfo(const char *type, uint32_t version)
     tString[typeLen++] = '\n';
     tString[typeLen] = 0;
 
-    DBG_APP_INFO("%s", tString);
+    Cy_Debug_AddToLog(1,"%s", tString);
 }
-/*****************************************************************************
- * Function Name: Cy_USB_USBHSInit
- *****************************************************************************
- * Summary
- *  Initialize USBHS block and attempt device enumeration.
- *
- * Parameters:
- *  None
- *
- * Return:
- *  void
- ****************************************************************************/
+
+/**
+ * \name Cy_USB_VbusDetGpio_ISR
+ * \brief Interrupt handler for the Vbus detect GPIO transition detection.
+ * \retval None
+ */
+static void Cy_USB_VbusDetGpio_ISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken;
+    cy_stc_usbd_app_msg_t xMsg;
+
+    /* Send VBus changed message to the task thread. */
+    xMsg.type = CY_USB_VBUS_CHANGE_INTR;
+    xQueueSendFromISR(appCtxt.xQueue, &(xMsg), &(xHigherPriorityTaskWoken));
+
+    /* Remember that VBus change has happened and disable the interrupt. */
+    appCtxt.vbusChangeIntr = true;
+    Cy_GPIO_SetInterruptMask(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN, 0);
+}
+
+/**
+ * \name Cy_USB_USBHSInit
+ * \brief Initialize USBHS block and attempt device enumeration.
+ * \retval None
+ */
 void Cy_USB_USBHSInit (void)
 {
+    cy_stc_gpio_pin_config_t pinCfg;
     cy_stc_sysint_t intrCfg;
 
+	/* Do all the relevant clock configuration */
+	Cy_Fx2g3_InitPeripheralClocks(false, true);
 
-    Cy_WDT_Unlock();
-    Cy_WDT_Disable();
-    /* Enable interrupts. */
-    __enable_irq ();
+	/* Unlock and then disable the watchdog. */
+	Cy_WDT_Unlock();
+	Cy_WDT_Disable();
+
+	/* Enable interrupts. */
+	__enable_irq();
+
+    memset((void *)&pinCfg, 0, sizeof(pinCfg));
+
+    /* Configure VBus detect GPIO. */
+    pinCfg.driveMode = CY_GPIO_DM_HIGHZ;
+    pinCfg.hsiom     = HSIOM_SEL_GPIO;
+    pinCfg.intEdge   = CY_GPIO_INTR_BOTH;
+    pinCfg.intMask   = 0x01UL;
+    Cy_GPIO_Pin_Init(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN, &pinCfg);
+
+    /* CM0+: Interrupt source to NVIC Mux map
+       VBUS(GPIO#4) - NVIC Mux #2
+       USBHS Active & DeepSleep - NVIC Mux #5
+    */
+    /* Register edge detect interrupt for Vbus detect GPIO. */
+#if CY_CPU_CORTEX_M4
+    intrCfg.intrSrc = VBUS_DETECT_GPIO_INTR;
+    intrCfg.intrPriority = 7;
+#else
+    intrCfg.cm0pSrc = VBUS_DETECT_GPIO_INTR;
+    intrCfg.intrSrc = NvicMux2_IRQn;
+    intrCfg.intrPriority = 3;
+#endif /* CY_CPU_CORTEX_M4 */
+    Cy_SysInt_Init(&intrCfg, Cy_USB_VbusDetGpio_ISR);
+    NVIC_EnableIRQ(intrCfg.intrSrc);
 
     /*
-     * Using USBFS interface for logging. Setup the required clock
-     * for USBFS operation.
+     * Enable the DMA buffer RAM
+     * need to be enabled before we try to do High BandWidth DMA initialization.
      */
-    ConfigurePeripheralClocks();
-
-    /* For Bringup  this is required */
-    MAIN_REG->CTRL = 0x81100003;
-
-    /* Register the ISR for USBHS and enable the interrupt. */
+    MAIN_REG->CTRL |= MAIN_REG_CTRL_IP_ENABLED_Msk;
+    /* Register ISR for and enable USBHS Interrupt. */
+#if CY_CPU_CORTEX_M4
     intrCfg.intrSrc      = usbhsdev_interrupt_u2d_active_o_IRQn;
     intrCfg.intrPriority = 4;
+#else
+    intrCfg.cm0pSrc      = usbhsdev_interrupt_u2d_active_o_IRQn;
+    intrCfg.intrSrc      = NvicMux5_IRQn;
+    intrCfg.intrPriority = 2;
+#endif /* CY_CPU_CORTEX_M4 */
     Cy_SysInt_Init(&intrCfg, Cy_USB_HS_ISR);
-    NVIC_EnableIRQ(usbhsdev_interrupt_u2d_active_o_IRQn);
+    NVIC_EnableIRQ(intrCfg.intrSrc);
 
-    intrCfg.intrSrc = usbhsdev_interrupt_u2d_dpslp_o_IRQn;
+    /* Register ISR for and enable USBHS Interrupt. */
+#if CY_CPU_CORTEX_M4
+    intrCfg.intrSrc      = usbhsdev_interrupt_u2d_dpslp_o_IRQn;
     intrCfg.intrPriority = 4;
+#else
+    intrCfg.cm0pSrc      = usbhsdev_interrupt_u2d_dpslp_o_IRQn;
+    intrCfg.intrSrc      = NvicMux5_IRQn;
+    intrCfg.intrPriority = 2;
+#endif /* CY_CPU_CORTEX_M4 */
     Cy_SysInt_Init(&intrCfg, Cy_USB_HS_ISR);
-    NVIC_EnableIRQ(usbhsdev_interrupt_u2d_dpslp_o_IRQn);
+    NVIC_EnableIRQ(intrCfg.intrSrc);
 }
 
-/*****************************************************************************
-* Function Name: Cy_USB_DisableUsbBlock
-******************************************************************************
-* Summary:
-*  Function to disable the USB IP block after terminating current
-*  connection.
-*
-* Parameters:
-*  None
-
-* Return:
-*  None
-*****************************************************************************/
+/**
+ * \name Cy_USB_DisableUsbBlock
+ * \brief   Function to disable the USB IP block after terminating current
+ *          connection.
+ * \retval None
+ */
 static void Cy_USB_DisableUsbBlock (void)
 {
     DBG_APP_INFO("USB DISABLE\r\n");
 }
 
-/*****************************************************************************
-* Function Name: Cy_USB_ConnectionDisable
-******************************************************************************
-* Summary:
-*  Function which disables the USB connection.
-*
-* Parameters:
-*  cy_stc_usb_app_ctxt_t *pAppCtxt: Application context structure pointer.
-
-* Return:
-*  void
-*****************************************************************************/
+/**
+ * \name Cy_USB_ConnectionDisable
+ * \brief Function which disables the USB connection.
+ * \param pAppCtxt Application context structure pointer.
+ * \retval None
+ */
 void Cy_USB_ConnectionDisable (cy_stc_usb_app_ctxt_t *pAppCtxt)
 {
     Cy_USBD_DisconnectDevice(pAppCtxt->pUsbdCtxt);
-    pAppCtxt->usbConnectDone = false;
     pAppCtxt->devState = CY_USB_DEVICE_STATE_DISABLE;
     Cy_USB_DisableUsbBlock();
 }
 
-/*****************************************************************************
-* Function Name: Cy_USB_ConnectionEnable
-******************************************************************************
-* Summary:
-*  Function used to enable USB connection.
-*
-* Parameters:
-*  cy_stc_usb_app_ctxt_t *pAppCtxt: Application context structure.
-
-* Return:
-*  void
-*****************************************************************************/
+/**
+ * \name Cy_USB_ConnectionEnable
+ * \brief Function used to enable USB connection.
+ * \param pAppCtxt Application context structure.
+ * \retval None
+ */
 bool Cy_USB_ConnectionEnable (cy_stc_usb_app_ctxt_t *pAppCtxt)
 {
     DBG_APP_INFO("Cy_USB_ConnectionEnable >>\r\n");
@@ -368,24 +375,15 @@ bool Cy_USB_ConnectionEnable (cy_stc_usb_app_ctxt_t *pAppCtxt)
     pAppCtxt->usbConnected = true;
 
     Cy_SysLib_DelayUs(10);
-    appCtxt.usbConnectDone = true;
     DBG_APP_INFO("Cy_USB_ConnectionEnable <<\r\n");
     return true;
 }
 
-/*****************************************************************************
-* Function Name: main(void)
-******************************************************************************
-* Summary:
-*  Entry to the application.
-*
-* Parameters:
-*  void
-
-* Return:
-*  Does not return.
-*****************************************************************************/
-
+/**
+ * \name main
+ * \brief Entry to the application.
+ * \retval None
+ */
 int main (void)
 {
     pCpuDmacBase = ((DMAC_Type *)DMAC_BASE);
@@ -409,10 +407,9 @@ int main (void)
 #endif /* USBFS_LOGS_ENABLE */
 
     Cy_Debug_LogInit(&dbgCfg);
-#if FREERTOS_ENABLE
+
     /* Create task for printing logs and check status. */
     xTaskCreate(PrintTaskHandler, "PrintLogTask", 512, NULL, 5, &printLogTaskHandle);
-#endif /* FREERTOS_ENABLE */
 
     Cy_SysLib_Delay(500);
     Cy_Debug_AddToLog(1, "********** FX2G3: Flash Loader Application ********** \r\n");
@@ -459,45 +456,29 @@ int main (void)
     Cy_USBD_SetDscr(&usbdCtxt, CY_USB_SET_STRING_DSCR, 1, (uint8_t *)CyFxUSBManufactureDscr);
     Cy_USBD_SetDscr(&usbdCtxt, CY_USB_SET_STRING_DSCR, 2, (uint8_t *)CyFxUSBProductDscr);
 
-    /* Clear VBus present status. */
-    appCtxt.vbusPresent    = false;
-    appCtxt.usbConnectDone = false;
+    /* Initialize the application and create echo device thread. */
 
     Cy_USB_AppInit(&appCtxt, &usbdCtxt, pCpuDmacBase, pCpuDw0Base, pCpuDw1Base);
 
-    
-    /* Assume that VBus is present for now. */
-    appCtxt.vbusPresent = true;
-
     DBG_APP_INFO("Scheduler start done\r\n");
-#if FREERTOS_ENABLE
     /* Invokes scheduler: Not expected to return. */
     vTaskStartScheduler();
-#endif /* FREERTOS_ENABLE */
-
-    while(1)
+    while (1)
     {
-        Cy_SysLib_Delay(10000);
-        DBG_APP_INFO("TaskIdle\r\n");
+    	Cy_SysLib_Delay(10000);
+    	DBG_APP_INFO("Task Idle\r\n");
     }
 
     return 0;
 }
 
-/*****************************************************************************
- * Function Name: Cy_OnResetUser(void)
- ******************************************************************************
- * Summary:
- *  Init function which is executed before the load regions in RAM are updated.
- *  The High BandWidth subsystem needs to be enable here to allow variables
- *  placed in the High BandWidth SRAM to be updated.
- *
- * Parameters:
- *  void
- *
- * Return:
- *  void
- *****************************************************************************/
+/**
+ * \name Cy_OnResetUser
+ * \details Init function which is executed before the load regions in RAM are updated.
+ *          The High BandWidth subsystem needs to be enable here to allow variables
+ *          placed in the High BandWidth SRAM to be updated.
+ * \retval None
+ */
 void Cy_OnResetUser(void)
 {
     Cy_Fx2g3_OnResetInit();

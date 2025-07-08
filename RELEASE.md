@@ -1,4 +1,4 @@
-# Flash Loader Application 1.0.1
+# EZ-USB&trade; FX2G3: Flash loader application 1.0.2
 
 ## What's Included?
 
@@ -6,17 +6,20 @@ Refer to the [README.md](./README.md).
 
 ## Defect Fixes
 
-* Added support for Rev02 Kit
+Version 1.0.2: Added support for Cortex M0+.
 
 ## Supported Software and Tools
 
-This version of the application was validated for the compatibility with the following Software and Tools:
+This version of the application is compatible with the following software and tools:
 
-| Software and Tools                                      | Version |
-| :---                                                    | :----:  |
-| ModusToolbox Software Environment                       | 3.2.0   |
-| CAT1A Peripheral Driver Library                         | 3.12.1  |
-| GCC Compiler                                            | 11.3.1  |
+| Software and Tools                                       | Version |
+| :---                                                     | :----:  |
+| ModusToolbox&trade; software environment                 | 3.4.0   |
+| CAT1A Peripheral Driver Library                          | 3.16.0  |
+| USBFXStack Middleware Library                            | 1.2.0   |
+| FreeRTOS&trade; for Infineon MCUs                        | 10.5.002|
+| GNU Arm&reg; Embedded Compiler                           | 11.3.1  |
+| Arm&reg; Compiler                                        | 6.22    |
 
 ## More information
 
@@ -27,4 +30,4 @@ For more information, refer to the following documents:
 * [Infineon Technologies AG](https://www.infineon.com)
 
 ---
-© 2024, Cypress Semiconductor Corporation (an Infineon company) or an affiliate of Cypress Semiconductor Corporation.
+© 2025, Cypress Semiconductor Corporation (an Infineon company) or an affiliate of Cypress Semiconductor Corporation.

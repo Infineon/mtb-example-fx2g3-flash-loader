@@ -2,11 +2,11 @@
 * \file usb_app.c
 * \version 1.0
 *
-* C source file implementing USB Handling for flash loader application logic.
+* \details C source file implementing USB Handling for flash loader application logic.
 *
 *******************************************************************************
 * \copyright
-* (c) (2024), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -37,13 +37,13 @@
 
 uint32_t Ep0TestBuffer[1024U] __attribute__ ((aligned (32)));
 extern uint32_t Ep0TestBuffer[1024U];
-extern cy_en_smif_slave_select_t glSlaveSelect;
 
-/*
- * Function: Cy_USB_HandleCtrlSetup()
- * Description: This function handles control command given to application.
- * Parameter: pApp, pMsg
- * return: void
+/**
+ * \name Cy_USB_HandleCtrlSetup
+ * \brief Handle control command given to application
+ * \param pApp Application layer conetxt pointer
+ * \param pMsg App message queue
+ * \retval None
  */
 void
 Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
@@ -135,8 +135,6 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             if ((bRequest == CY_USB_SC_SET_FEATURE) &&
                 (bTarget == CY_USB_CTRL_REQ_RECIPENT_INTF) &&
                 (wValue == 0x00)) {
-
-                /* TODO: Send a queue Msg to set the link to U2 */
                 Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
                 isReqHandled = true;
             }
@@ -165,7 +163,6 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                     case CY_USB_FEATURE_DEVICE_REMOTE_WAKE:
                         DBG_APP_INFO("ClrFeature:CY_USB_FEATURE_DEVICE_REMOTE_WAKE\r\n");
                         Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        /* TBD NT Enablng LPM only for CV test */
                         DBG_APP_INFO("Enabling LPM\r\n");
                         Cy_USBD_LpmEnable(pAppCtxt->pUsbdCtxt);
                         isReqHandled = true;
@@ -377,19 +374,14 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
 
 }   /* end of function() */
 
-/*
- * Function: Cy_USB_TaskHandler()
- * Description: This function handles events for device.
- * Parameter: pTaskParam
- * return: void
+/**
+ * \name Cy_USB_TaskHandler
+ * \brief This function handles events for device.
+ * \param pTaskParam Task param
+ * \retval None
  */
-#if FREERTOS_ENABLE
 void 
 Cy_USB_TaskHandler (void *pTaskParam)
-#else
-void 
-Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
-#endif /* FREERTOS_ENABLE */
 {
     cy_stc_usb_app_ctxt_t *pAppCtxt;
     cy_stc_usbd_app_msg_t queueMsg;
@@ -398,7 +390,7 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
     /* Enable USB-2 connection and wait until it is stable. */
     vTaskDelay(250);
 
-#if FREERTOS_ENABLE
+
     BaseType_t xStatus;
     uint32_t idleLoopCnt = 0;
 
@@ -428,8 +420,6 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
         KickWDT();
 #endif /* WATCHDOG_RESET_EN */
 
-#if FREERTOS_ENABLE
-
         /*
          * Wait until some data is received from the queue.
          * Timeout after 100 ms.
@@ -444,16 +434,8 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
 
             continue;
         }
+
         idleLoopCnt = 0;
-        #endif
-#else /* !FREERTOS_ENABLE */
-
-        memcpy((uint8_t *)&queueMsg, (uint8_t *)qMsg,
-                sizeof(cy_stc_usbd_app_msg_t));
-
-         
-#endif /* FREERTOS_ENABLE */
-
         /*
          * Make sure that the USB link is brought into active state
          * periodically to avoid stuck data transfers.
@@ -465,6 +447,25 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
 
         switch (queueMsg.type) {
 
+        	case CY_USB_VBUS_CHANGE_INTR:
+			  /* Start the debounce timer. */
+			  xTimerStart(pAppCtxt->vbusDebounceTimer, 0);
+			  break;
+
+            case CY_USB_VBUS_CHANGE_DEBOUNCED:
+			  /* Check whether VBus state has changed. */
+			  pAppCtxt->vbusPresent = (Cy_GPIO_Read(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN) == VBUS_DETECT_STATE);
+			  if (pAppCtxt->vbusPresent) {
+				  if (!pAppCtxt->usbConnected) {
+					  DBG_APP_INFO("Enabling USB connection due to VBus detect\r\n");
+					  Cy_USB_ConnectionEnable(pAppCtxt);
+				  }
+			  } else {
+				  DBG_APP_INFO("Disabling USB connection due to VBus removal\r\n");
+				  Cy_USB_ConnectionDisable(pAppCtxt);
+			  }
+			  break;
+				  
             case CY_USB_MSG_CTRL_XFER_SETUP:
                 DBG_APP_TRACE("CY_USB_MSG_CTRL_XFER_SETUP\r\n");
                 Cy_USB_HandleCtrlSetup((void *)pAppCtxt, &queueMsg);
@@ -490,20 +491,14 @@ Cy_USB_TaskHandler (void *pTaskParam, void* qMsg)
                 break;
         }   /* end of switch() */
     
-#if FREERTOS_ENABLE
     } while (1);
-#endif /* FREERTOS_ENABLE */
 }   /* End of function  */
 
-
-
-
-
-/*
- * Function: Cy_USB_Endp0ReadComplete()
- * Description:  Handler for DMA transfer completion on endpoint 0 OUT Transfer.
- * Parameter: cy_stc_usb_app_ctxt_t
- * return: void
+/**
+ * \name Cy_USB_Endp0ReadComplete
+ * \brief Handler for DMA transfer completion on endpoint 0 OUT Transfer.
+ * \param pApp application layer context pointer
+ * \retval None
  */
 void
 Cy_USB_Endp0ReadComplete (void *pApp)
@@ -515,26 +510,50 @@ Cy_USB_Endp0ReadComplete (void *pApp)
     return;
 }   /* end of function */
 
+/**
+ * \name Cy_USB_VbusDebounceTimerCallback
+ * \brief Timer used to do debounce on VBus changed interrupt notification.
+ * \param xTimer timer handle
+ * \return None
+ */
+void
+Cy_USB_VbusDebounceTimerCallback (TimerHandle_t xTimer)
+{
+    cy_stc_usb_app_ctxt_t *pAppCtxt = (cy_stc_usb_app_ctxt_t *)pvTimerGetTimerID(xTimer);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    cy_stc_usbd_app_msg_t xMsg;
 
-/*
- * Function: Cy_USB_AppInit()
- * Description: This function Initializes application related data structures,
- *              register callback and creates queue and task for device
- *              function. Common function for FS/HS.
- * Parameter: cy_stc_usb_app_ctxt_t, cy_stc_usb_usbd_ctxt_t, DMAC_Type
- *            DW_Type, DW_Type, cy_stc_hbdma_mgr_context_t*
- * return: None.
- * Note: This function should be called after USBD_Init()
+    DBG_APP_INFO("VbusDebounce_CB\r\n");
+    if (pAppCtxt->vbusChangeIntr) {
+        /* Notify the VCOM task that VBus debounce is complete. */
+        xMsg.type = CY_USB_VBUS_CHANGE_DEBOUNCED;
+        xQueueSendFromISR(pAppCtxt->xQueue, &(xMsg), &(xHigherPriorityTaskWoken));
+
+        /* Clear and re-enable the interrupt. */
+        pAppCtxt->vbusChangeIntr = false;
+        Cy_GPIO_ClearInterrupt(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN);
+        Cy_GPIO_SetInterruptMask(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN, 1);
+    }
+}   /* end of function  */
+
+/**
+ * \name Cy_USB_AppInit
+ * \details This function Initializes application related data structures,
+ *          register callback and creates queue and task for device
+ *          function. Common function for FS/HS.
+ * \param pAppCtxt application layer conetxt pointer
+ * \param pUsbdCtxt USBD layer conetxt pointer
+ * \param pCpuDmacBase DMA controller base address pointer
+ * \param pCpuDw0Base Datawire 0 base address pointer
+ * \param pCpuDw1Base Datawire 1 base address pointer
+ * \retval None
  */
 void
 Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
                 cy_stc_usb_usbd_ctxt_t *pUsbdCtxt, DMAC_Type *pCpuDmacBase,
                 DW_Type *pCpuDw0Base, DW_Type *pCpuDw1Base)
 {
-   
-#if FREERTOS_ENABLE
     BaseType_t status = pdFALSE;
-#endif /* FREERTOS_ENABLE */
     pAppCtxt->devState = CY_USB_DEVICE_STATE_DISABLE;
     pAppCtxt->prevDevState = CY_USB_DEVICE_STATE_DISABLE;
 
@@ -561,8 +580,6 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
 
     if (!(pAppCtxt->firstInitDone)) {
        
-
-#if FREERTOS_ENABLE
         /* create queue and register it to kernel. */
         pAppCtxt->xQueue = xQueueCreate(CY_USB_MSG_QUEUE_SIZE,
                                         CY_USB_MSG_SIZE);
@@ -576,9 +593,14 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
             DBG_APP_ERR("TaskcreateFail\r\n");
             return;
         }
-#else
-        Cy_USB_ConnectionEnable(pAppCtxt);
-#endif /* FREERTOS_ENABLE */
+		
+        pAppCtxt->vbusDebounceTimer = xTimerCreate("VbusDebounceTimer", 200, pdFALSE,
+				(void *)pAppCtxt, Cy_USB_VbusDebounceTimerCallback);
+		if (pAppCtxt->vbusDebounceTimer == NULL) {
+			DBG_APP_ERR("TimerCreateFail\r\n");
+			return;
+		}
+		DBG_APP_INFO("VBus debounce timer created\r\n");
         pAppCtxt->firstInitDone = 0x01;
         
     }
@@ -587,12 +609,11 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
     return;
 }   /* end of function. */
 
-
-/*
- * Function: Cy_USB_AppRegisterCallback()
- * Description: This function will register all calback with USBD layer. 
- * Parameter: cy_stc_usb_app_ctxt_t.
- * return: None.
+/**
+ * \name Cy_USB_AppRegisterCallback
+ * \brief This function will register all calback with USBD layer.
+ * \param pAppCtxt application layer context pointer
+ * \return None
  */
 void
 Cy_USB_AppRegisterCallback (cy_stc_usb_app_ctxt_t *pAppCtxt)
@@ -607,11 +628,12 @@ Cy_USB_AppRegisterCallback (cy_stc_usb_app_ctxt_t *pAppCtxt)
     return;
 }   /* end of function. */
 
-/*
- * Function: Cy_USB_AppBusResetCallback()
- * Description: This Function will be called by USBD when bus detects RESET.
- * Parameter: pAppCtxt, cy_stc_usb_usbd_ctxt_t
- * return: void
+/**
+ * \name Cy_USB_AppBusResetCallback
+ * \brief This Function will be called by USBD when bus detects RESET.
+ * \param pAppCtxt application layer context pointer.
+ * \param pUsbdCtxt USBD layer context pointer.
+ * \retval None
  */
 void 
 Cy_USB_AppBusResetCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
@@ -636,28 +658,23 @@ Cy_USB_AppBusResetCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
     return;
 }   /* end of function. */
 
-
-
-/*
- * Function: Cy_USB_AppSetupCallback()
- * Description: This Function will be called by USBD  layer when 
- *              set configuration command successful. This function 
- *              does sanity check and prepare device for function
- *              to take over.
- * Parameter: pAppCtxt, cy_stc_usb_usbd_ctxt_t
- * return: void
- */
 volatile uint16_t pktType = 0;
 volatile uint16_t pktLength = 1024;
 
+/**
+ * \name Cy_USB_AppSetupCallback
+ * \brief Callback function will be invoked by USBD when SETUP packet is received
+ * \param pAppCtxt application layer context pointer.
+ * \param pUsbdCtxt USBD context
+ * \param pMsg USB Message
+ * \retval None
+ */
 void 
 Cy_USB_AppSetupCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
                          cy_stc_usb_cal_msg_t *pMsg)
 {
-#if FREERTOS_ENABLE
     cy_stc_usb_app_ctxt_t *pUsbApp = (cy_stc_usb_app_ctxt_t *)pAppCtxt;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-#endif
     cy_stc_usbd_app_msg_t xMsg;
     BaseType_t status;
 
@@ -665,22 +682,30 @@ Cy_USB_AppSetupCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
     xMsg.data[0] = pMsg->data[0];
     xMsg.data[1] = pMsg->data[1];
 
-#if FREERTOS_ENABLE
     status = xQueueSendFromISR(pUsbApp->xQueue, &(xMsg),
                                &(xHigherPriorityTaskWoken));
-#else
-    Cy_USB_TaskHandler(pAppCtxt, &xMsg);
-#endif /* FREERTOS_ENABLE */
     (void)status;
 
 }   /* end of function. */
 
-void checkStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking)
+/**
+ * \name Cy_CheckStatus
+ * \brief Function that handles prints error log
+ * \param function Pointer to function
+ * \param line Line number where error is seen
+ * \param condition condition of failure
+ * \param value error code
+ * \param isBlocking blocking function
+ * \return None
+ */
+void Cy_CheckStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking)
 {
     if (!condition)
     {
         /* Application failed with the error code status */
+        Cy_Debug_AddToLog(1, RED);
         Cy_Debug_AddToLog(1, "Function %s failed at line %d with status = 0x%x\r\n", function, line, value);
+        Cy_Debug_AddToLog(1, COLOR_RESET);
         if (isBlocking)
         {
             /* Loop indefinitely */
@@ -691,19 +716,30 @@ void checkStatus(const char *function, uint32_t line, uint8_t condition, uint32_
     }
 }
 
-void checkStatusAndHandleFailure(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking, void (*failureHandler)(void))
+/**
+ * \name Cy_CheckStatusHandleFailure
+ * \brief Function that handles prints error log
+ * \param function Pointer to function
+ * \param line LineNumber where error is seen
+ * \param condition Line number where error is seen
+ * \param value error code
+ * \param isBlocking blocking function
+ * \param failureHandler failure handler function
+ * \return None
+ */
+void Cy_CheckStatusHandleFailure(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking, void (*failureHandler)(void))
 {
     if (!condition)
     {
         /* Application failed with the error code status */
+        Cy_Debug_AddToLog(1, RED);
         Cy_Debug_AddToLog(1, "Function %s failed at line %d with status = 0x%x\r\n", function, line, value);
+        Cy_Debug_AddToLog(1, COLOR_RESET);
 
         if(failureHandler != NULL)
         {
             (*failureHandler)();
         }
-
-
         if (isBlocking)
         {
             /* Loop indefinitely */
@@ -713,4 +749,17 @@ void checkStatusAndHandleFailure(const char *function, uint32_t line, uint8_t co
         }
     }
 }
+
+/**
+ * \name Cy_FailHandler
+ * \brief Error Handler
+ * \retval None
+ */
+void Cy_FailHandler(void)
+{
+    DBG_APP_ERR("Reset Done\r\n");
+}
+
+/* [] END OF FILE */
+
 

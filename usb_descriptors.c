@@ -2,11 +2,11 @@
 * \file usb_descriptors.c
 * \version 1.0
 *
-* Defines the USB descriptors used in the USB flash loader application.
+* \brief Defines the USB descriptors used in the USB flash loader application.
 *
 *******************************************************************************
 * \copyright
-* (c) (2024), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0

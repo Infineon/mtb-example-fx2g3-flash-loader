@@ -2,11 +2,11 @@
 * \file spi.c
 * \version 1.0
 *
-* C source file with SMIF handlers.
+* \details C source file with SMIF handlers.
 *
 *******************************************************************************
 * \copyright
-* (c) (2024), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -28,9 +28,10 @@
 #include "usb_app.h"
 
 /* SMIF context*/
-cy_stc_smif_context_t spiContext;
+cy_stc_smif_context_t      spiContext;
 cy_en_smif_txfr_width_t   glCommandWidth[NUM_SPI_FLASH]     = {CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_QUAD};
 cy_en_smif_txfr_width_t   glReadWriteWidth[NUM_SPI_FLASH]   = {CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_SINGLE, CY_SMIF_WIDTH_OCTAL};
+
 uint8_t glSlaveSelectIndex[NUM_SPI_FLASH] = {CY_SMIF_SLAVE_SELECT_0, CY_SMIF_SLAVE_SELECT_1, (CY_SMIF_SLAVE_SELECT_0 | CY_SMIF_SLAVE_SELECT_1)};
 cy_en_flash_index_t glFlashMode = SPI_FLASH_0;
 #if !FLASH_AT45D
@@ -48,7 +49,14 @@ static const cy_stc_smif_config_t spiConfig =
     .blockEvent = (uint32_t)CY_SMIF_BUS_ERROR
 };
 
-/* Convert the provided 32-bit value to an array */
+/**
+ * \name Cy_SPI_AddressToArray
+ * \brief Convert the provided 32-bit value to an array
+ * \param value
+ * \param byteArray
+ * \param size
+ * \retval status
+ */
 static cy_en_smif_status_t Cy_SPI_AddressToArray(uint32_t value, uint8_t *byteArray, uint8_t size)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -66,7 +74,12 @@ static cy_en_smif_status_t Cy_SPI_AddressToArray(uint32_t value, uint8_t *byteAr
     return status;
 }
 
-/* SPI Write enable*/
+/**
+ * \name Cy_SPI_WriteEnable
+ * \brief SPI write enable on specified flash index
+ * \param flashIndex
+ * \retval status
+ */
 static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -126,7 +139,12 @@ static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_flash_index_t flashIndex)
     return status;
 }
 
-/* Configure SMIF pins*/
+/**
+ * \name Cy_SPI_ConfigureSMIFPins
+ * \brief Configure SMIF Pins
+ * \param init
+ * \retval status
+ */
 static cy_en_gpio_status_t Cy_SPI_ConfigureSMIFPins(bool init)
 {
     cy_en_gpio_status_t status = CY_GPIO_SUCCESS;
@@ -313,7 +331,13 @@ static cy_en_gpio_status_t Cy_SPI_ConfigureSMIFPins(bool init)
     return status;
 }
 
-/* Function to read device ID */
+/**
+ * \name Cy_SPI_ReadID
+ * \brief Function to read device ID
+ * \param rxBuffer
+ * \param flashIndex
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -340,7 +364,13 @@ cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIn
     return status;
 }
 
-/* Function to check busy status of flash */
+
+/**
+ * \name Cy_SPI_IsMemBusy
+ * \brief Function to check busy status of flash
+ * \param flashIndex
+ * \retval boolean true when busy, false when not busy
+ */
 bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -377,8 +407,13 @@ bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex)
     return ((statusVal & CY_SPI_WIP_MASK) == CY_SPI_WIP_STATUS);
 }
 
-
-/* Function to enable SPI block */
+/**
+ * \name Cy_SPI_Start
+ * \brief Function to enable SPI block 
+ * \param pAppCtxt
+ * \param flashIndex
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -421,7 +456,13 @@ cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_in
     return status;
 }
 
-/* Function to disable SPI block */
+/**
+ * \name Cy_SPI_Stop
+ * \brief Function to stop the SPI block
+ * \param pAppCtxt application layer context pointer
+ * \param flashIndex flash index
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_Stop(void)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -434,13 +475,12 @@ cy_en_smif_status_t Cy_SPI_Stop(void)
 
 #if !FLASH_AT45D
 
-/*
-Function     : Cy_SPI_FlashReset ()
-Description  : Send reset command to selected flash.   
-Parameters  :  cy_en_flash_index_t flashIndex 
-Return      :  cy_en_smif_status_t  
-
-*/
+/**
+ * \name Cy_SPI_FlashReset
+ * \brief Function to send reset command to selected flash
+ * \param flashIndex SPI Flash Index
+ * \retval status
+ */
 static cy_en_smif_status_t Cy_SPI_FlashReset(cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -473,13 +513,13 @@ static cy_en_smif_status_t Cy_SPI_FlashReset(cy_en_flash_index_t flashIndex)
     return status;
 }
 
-/*
- * Function     :   Cy_SPI_ReadCFIMap  
- * Description  :   Read Common Flash Interface (CFI) Table
- * Parameters   :   cy_stc_cfi_flash_map_t *cfiFlashMap, cy_en_flash_index_t flashIndex
- * Return       :   cy_en_smif_status_t  
+/**
+ * \name Cy_SPI_ReadCFIMap
+ * \brief Read Common Flash Interfact (CFI) table
+ * \param cfiFlashMap Pointer to CFI flash map
+ * \param flashIndex Select slave index
+ * \retval status
  */
-
 static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMap, cy_en_flash_index_t flashIndex)
 {
     uint8_t sectorIndex = 0;
@@ -516,7 +556,7 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
 
     if(cfiFlashMap->numEraseRegions < CY_CFI_TABLE_LENGTH)
     {
-        //The part has multiple erase layouts, possibly because it supports hybrid layout
+        /* The part has multiple erase layouts, possibly because it supports hybrid layout */
         for(eraseRegionIndex = 0 , sectorIndex = 0;
                 eraseRegionIndex < (cfiFlashMap->numEraseRegions);
                 eraseRegionIndex++, sectorIndex += CY_CFI_ERASE_REGION_SIZE_INFO_SIZE)
@@ -554,15 +594,22 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
     return status;
 }
 
-/* Initialize the SPI Flash - 
- * Quad Mode - Data in x4 mode, Command in x1 mode
- * QPI Mode - Data in x4 mode, Command in x4 mode
+/**
+ * \name Cy_SPI_FlashInit
+ * \brief Function to initialize SPI Flash
+ * \details Quad Mode - Data in x4 mode, Command in x1 mode
+ *          QPI Mode - Data in x4 mode, Command in x4 mode
  *
- * QPI enabled implies Quad enable.
+ *          QPI enabled implies Quad enable.
  *
- * Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
- * Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
- * */
+ *          Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
+ *          Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
+ *
+ * \param flashIndex SPI Flash Index
+ * \param quadEnable Quad Mode enable
+ * \param qpiEnable QPI mode enable
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -579,15 +626,14 @@ cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadE
     return status;
 }
 
-/*
-Function     : Cy_SPI_UniformSectorErase ()
-Description :  Send the uniform sector erase command for all non-4KB sectors. 
-               Note that this command has no effect on 4KB-sized sectors.
-Parameters  :  cy_en_flash_index_t flashIndex, uint32_t address 
-Return      :  cy_en_smif_status_t  
-
-*/
-
+/**
+ * \name Cy_SPI_UniformSectorErase
+ * \brief Send the uniform sector erase command for all non-4KB sectors. 
+ * \note This command has no effect on 4KB-sized sectors.
+ * \param flashIndex flash index
+ * \param address flash address
+ * \retval status
+ */
 static cy_en_smif_status_t Cy_SPI_UniformSectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -621,14 +667,13 @@ static cy_en_smif_status_t Cy_SPI_UniformSectorErase(cy_en_flash_index_t flashIn
     return status;
 }
 
-/*
-Function     : Cy_SPI_HybridSectorErase ()
-Description :  Send hybrid sector erase command for the 4KB sectors. 
-Parameters  :  cy_en_flash_index_t flashIndex, uint32_t address 
-Return      :  cy_en_smif_status_t  
-
-*/
-
+/**
+ * \name Cy_SPI_HybridSectorEras
+ * \brief Send hybrid sector erase command for the 4KB sectors.
+ * \param flashIndex flash index
+ * \param address flash address
+ * \retval status
+ */
 static cy_en_smif_status_t Cy_SPI_HybridSectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -662,7 +707,13 @@ static cy_en_smif_status_t Cy_SPI_HybridSectorErase(cy_en_flash_index_t flashInd
 }
 #endif
 
-/* Function to erase flash sector */
+/**
+ * \name Cy_SPI_SectorErase
+ * \brief Function to erase flash sector 
+ * \param flashIndex flash index
+ * \param address flash address
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t address)
 {
 #if FLASH_AT45D
@@ -747,7 +798,14 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
 #endif
 }
 
-/* Write to Flash page*/
+/**
+ * \name Cy_SPI_WritePage
+ * \brief Function to Write to Flash page
+ * \param address flash address
+ * \param txBuffer Data buffer pointer
+ * \param flashIndex flash index
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_flash_index_t flashIndex)
 {
     uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT]; 
@@ -870,7 +928,16 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
     return status;
 }
 
-/* Flash Write*/
+/**
+ * \name Cy_SPI_WriteOperation
+ * \brief Function to initiate flash write operation
+ * \param address flash address
+ * \param txBuffer Data buffer pointer
+ * \param length Length of data to write to flash
+ * \param numPages Number of Flash pages to write
+ * \param flashIndex flash index
+ * \retval status
+ */
 cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex)
 {
     uint32_t pageIndex = 0;
@@ -894,7 +961,15 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
     return status;
 }
 
-/* Read Flash*/
+/**
+ * \name Cy_SPI_ReadOperation
+ * \brief Function to initiate flash write operation
+ * \param address flash address
+ * \param rxBuffer Data buffer pointer
+ * \param length Length of data to read from flash
+ * \param flashIndex flash index
+ * \return status
+ */
 cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
@@ -950,20 +1025,4 @@ cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, ui
     return status;
 }
 
-/* Check status */
-void Cy_App_CheckStatus(const char *function, uint32_t line, uint8_t condition, uint32_t value, uint8_t isBlocking)
-{
-    if (!condition)
-    {
-        /* Application failed with the error code status */
-        DBG_APP_ERR("Function %s failed at line %d with status = 0x%x\r\n", function, line, value);
-        if (isBlocking)
-        {
-            /* Loop indefinitely */
-            for (;;)
-            {
-            }
-        }
-    }
-}
 
