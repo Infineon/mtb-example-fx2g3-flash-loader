@@ -30,6 +30,7 @@
 #include "cy_pdl.h"
 #include "cy_debug.h"
 #include "usb_app.h"
+#include <stdint.h>
 
 /* Macros */
 #define SMIF_HW                           (SMIF0)
@@ -95,8 +96,10 @@
 #define CY_SPI_SECTOR_ERASE_CMD           (0xD8)
 #define CY_SPI_HYBRID_SECTOR_ERASE_CMD    (0x20)
 #define CY_SPI_PROGRAM_CMD                (0x02)
+#define CY_QSPI_PROGRAM_CMD               (0x32)
 #define CY_SPI_WRITE_ENABLE_CMD           (0x06)
 #define CY_SPI_READ_CMD                   (0x03)
+#define CY_QSPI_READ_CMD                  (0x6B)
 #define SPI_ADDRESS_BYTE_COUNT            (3)
 #define CY_SPI_RESET_ENABLE_CMD           (0x66)
 #define CY_SPI_SW_RESET_CMD               (0x99)
@@ -112,17 +115,20 @@
 #define CY_SPI_PROGRAM_TIMEOUT_US         (650000)
 #define MAX_BUFFER_SIZE                   (2048u)
 
-#define CY_CFI_DEVICE_SIZE_OFFSET          (0x27)
-#define CY_CFI_ERASE_NUM_SECTORS_OFFSET    (0x2D)
-#define CY_CFI_ERASE_REGION_SIZE_INFO_SIZE (0x04)
-#define CY_CFI_ERASE_SECTOR_SIZE_OFFSET    (0x2F)
-#define CY_CFI_MAX_SIZE_NUM_ERASE_SECTORS  (0xFF)
-#define CY_CFI_NUM_ERASE_REGION_OFFSET     (0x2C)
-#define CY_CFI_TABLE_LENGTH                (0x56)
+#define CY_CFI_DEVICE_SIZE_OFFSET           (0x27)
+#define CY_CFI_ERASE_NUM_SECTORS_OFFSET     (0x2D)
+#define CY_CFI_ERASE_REGION_SIZE_INFO_SIZE  (0x04)
+#define CY_CFI_ERASE_SECTOR_SIZE_OFFSET     (0x2F)
+#define CY_CFI_MAX_SIZE_NUM_ERASE_SECTORS   (0xFF)
+#define CY_CFI_NUM_ERASE_REGION_OFFSET      (0x2C)
+#define CY_CFI_TABLE_LENGTH                 (0x56)
 
+#define CY_APP_QSPI_CONFIG_REG_READ_CMD   (0x35)
+#define CY_APP_QSPI_WRITE_REGISTER_CMD    (0x01)
+#define CY_APP_QSPI_STATUS_1_READ_CMD     (0x05)
 
 /* Enums */
-/* Vendor commands sent by USB Host application (eg: control center)*/
+/* Vendor commands sent by USB Host application (eg: EZ-USB FX Control Center) */
 typedef enum cy_en_flashProgrammerVendorCmd_t
 {
     FLASH_CMD_CHECK_SPI_SUPPORT     = 0xB0,
@@ -232,20 +238,70 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
 
 /**
  * \name Cy_SPI_FlashInit
- * \brief Function to initialize SPI Flash
- * \details Quad Mode - Data in x4 mode, Command in x1 mode
- *          QPI Mode - Data in x4 mode, Command in x4 mode
- *
- *          QPI enabled implies Quad enable.
- *
- *          Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
- *          Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
- *
+ * \brief Function to initialize SPI Flash device
  * \param flashIndex SPI Flash Index
- * \param quadEnable Quad Mode enable
- * \param qpiEnable QPI mode enable
  * \retval status
  */
-cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable);
+cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex);
+
+/* QSPI-related function prototypes */
+
+/**
+ * \name Cy_App_ReadConfigRegister
+ * \brief Function to read configuration register from QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \retval Configuration register value
+ */
+uint8_t Cy_App_ReadConfigRegister(cy_en_smif_slave_select_t slaveSelect);
+
+/**
+ * \name Cy_App_QSPIStatus1Read
+ * \brief Function to read status register 1 from QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \retval Status register 1 value
+ */
+uint8_t Cy_App_QSPIStatus1Read(cy_en_smif_slave_select_t slaveSelect);
+
+/**
+ * \name Cy_App_WriteConfigurationRegister
+ * \brief Function to write configuration register to QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \param value Value to write to configuration register
+ * \retval None
+ */
+void Cy_App_WriteConfigurationRegister(cy_en_smif_slave_select_t slaveSelect, uint8_t value);
+
+/**
+ * \name Cy_QSPI_Start
+ * \brief Function to enable SPI block and configure for Quad Mode before initialization
+ * \details Quad Mode - Data in x4 mode, Commands in x1 mode
+ * \param pAppCtxt Application context pointer
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_QSPI_ReadOperation
+ * \brief Function to initiate QSPI flash read operation
+ * \param address Flash address offset to read from
+ * \param p_rxBuffer Buffer to store read data
+ * \param length Length of data to read from flash
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_ReadOperation(uint32_t address, uint8_t *p_rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex);
+
+/**
+ * \name Cy_QSPI_WriteOperation
+ * \brief Function to initiate QSPI flash write operation
+ * \param address Flash address offset to write to
+ * \param txBuffer Buffer containing data to be written
+ * \param length Length of data to write to flash
+ * \param numPages Number of Flash pages to write
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex);
 
 #endif /* _SPI_H_ */

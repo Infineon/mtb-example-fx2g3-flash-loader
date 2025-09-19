@@ -457,6 +457,66 @@ cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_in
 }
 
 /**
+ * \name Cy_QSPI_Start
+ * \brief Function to enable SPI block and configure for Quad Mode before initialization
+ * \details Quad Mode - Data in x4 mode, Commands in x1 mode
+ * \param pAppCtxt Application context pointer
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    uint32_t programWait = 0;
+
+    pAppCtxt->qspiWriteBuffer = writeBuffer;
+    pAppCtxt->qspiReadBuffer = readBuffer;
+
+    memset(pAppCtxt->qspiWriteBuffer, 0, MAX_BUFFER_SIZE);
+    memset(pAppCtxt->qspiReadBuffer, 0, MAX_BUFFER_SIZE);
+ 
+    /* SPI is connected to CLK_HF1. As per current clock configuration in Cy_Fx2g3_clk_init, CLK_HF1 is connected Clock path #1 (PLL#0) at 150 MHz  */
+    Cy_SysClk_ClkHfDisable(CY_SYSCLK_SPI_CLK_HF1);
+    Cy_SysClk_ClkHfSetSource(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_IN_CLKPATH1);
+
+    /* Selected SPI Clock = 150M/DIVIDER */
+    Cy_SysClk_ClkHfSetDivider(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_DIVIDE_BY_4);
+    Cy_SysClk_ClkHfEnable(CY_SYSCLK_SPI_CLK_HF1);
+
+    /* Initialize SMIF pins */
+    Cy_SPI_ConfigureSMIFPins(true);
+
+    status = Cy_SMIF_Init(SMIF_HW, &spiConfig, 10000u, &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_0, CY_SMIF_DATA_SEL0);
+    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_1, CY_SMIF_DATA_SEL2);
+    
+    Cy_SMIF_Enable(SMIF_HW, &spiContext);
+
+    /* Enable QSPI, write to config register 1 */
+    uint8_t cr1 = Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0);
+    Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_1);
+    
+    Cy_App_WriteConfigurationRegister(CY_SMIF_SLAVE_SELECT_0, cr1 | 0x02); /* 0010 */
+    Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0); /* Verify QUAD mode */
+
+    while(Cy_SPI_IsMemBusy(flashIndex)) { 
+        if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US) 
+        { 
+            status = CY_SMIF_EXCEED_TIMEOUT; 
+            DBG_APP_ERR("Error: Program Timeout\r\n"); 
+            break; 
+        } 
+    }
+
+    DBG_APP_INFO("SPI Initialization Done\r\n");
+    DBG_APP_INFO("SPI Clock = %d\r\n", Cy_SysClk_ClkHfGetFrequency(CY_SYSCLK_SPI_CLK_HF1));
+    return status;
+
+}
+
+/**
  * \name Cy_SPI_Stop
  * \brief Function to stop the SPI block
  * \param pAppCtxt application layer context pointer
@@ -595,22 +655,112 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
 }
 
 /**
+ * \name Cy_App_WriteConfigurationRegister
+ * \brief Function to write configuration register to QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \param value Value to write to configuration register
+ * \retval None
+ */
+void Cy_App_WriteConfigurationRegister(cy_en_smif_slave_select_t slaveSelect, uint8_t value)
+{
+    cy_en_smif_status_t result = CY_SMIF_SUCCESS;
+    uint8_t dataArray[2] = {0};
+
+    dataArray[0] = 0; // Status Register
+    dataArray[1] = value;
+
+    DBG_APP_INFO("SLV%d:Write %d to Config Register 1\r\n", slaveSelect - 1, value);
+
+    if(Cy_SPI_WriteEnable(SPI_FLASH_0)!=CY_SMIF_SUCCESS){
+        DBG_APP_ERR("Cy_SPI_WriteEnable failed, halting write to CR1\r\n");
+        return;
+    }
+
+    Cy_SysLib_Delay(200);
+
+    Cy_App_QSPIStatus1Read(slaveSelect);
+
+    result = Cy_SMIF_TransmitCommand(SMIF0,
+                                     CY_APP_QSPI_WRITE_REGISTER_CMD,
+                                     CY_SMIF_WIDTH_SINGLE,
+                                     NULL,
+                                     CY_SMIF_CMD_WITHOUT_PARAM,
+                                     CY_SMIF_WIDTH_SINGLE,
+                                     slaveSelect,
+                                     CY_SMIF_TX_NOT_LAST_BYTE,
+                                     &spiContext);
+
+    result = Cy_SMIF_TransmitDataBlocking(SMIF0,
+                                          dataArray,
+                                          2,
+                                          CY_SMIF_WIDTH_SINGLE,
+                                          &spiContext);
+                   
+    Cy_SysLib_Delay(200);
+
+    ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == result,result);
+}
+
+/**
+ * \name Cy_App_QSPIStatus1Read
+ * \brief Function to read status register 1 from QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \retval Status register 1 value
+ */
+uint8_t Cy_App_QSPIStatus1Read(cy_en_smif_slave_select_t slaveSelect)
+{
+    uint8_t statusVal = 0;
+    Cy_SMIF_TransmitCommand(SMIF0,
+                            CY_APP_QSPI_STATUS_1_READ_CMD,
+                            CY_SMIF_WIDTH_SINGLE,
+                            NULL,
+                            CY_SMIF_CMD_WITHOUT_PARAM,
+                            CY_SMIF_WIDTH_NA,
+                            slaveSelect,
+                            CY_SMIF_TX_NOT_LAST_BYTE,
+                            &spiContext);
+
+    Cy_SMIF_ReceiveDataBlocking(SMIF0, &statusVal, 1u, CY_SMIF_WIDTH_SINGLE, &spiContext);
+    DBG_APP_INFO("SLV%d:Status Register 01: 0x%x\r\n",slaveSelect-1,statusVal);
+    return statusVal;
+}
+
+/**
+ * \name Cy_App_ReadConfigRegister
+ * \brief Function to read configuration register from QSPI flash device
+ * \param slaveSelect Slave select line for the target flash device
+ * \retval Configuration register value
+ */
+uint8_t Cy_App_ReadConfigRegister(cy_en_smif_slave_select_t slaveSelect)
+{
+    uint8_t cfgRegValue = 0;
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+
+    status = Cy_SMIF_TransmitCommand(SMIF0,
+                                     CY_APP_QSPI_CONFIG_REG_READ_CMD,
+                                     CY_SMIF_WIDTH_SINGLE,
+                                     NULL,
+                                     CY_SMIF_CMD_WITHOUT_PARAM,
+                                     CY_SMIF_WIDTH_SINGLE,
+                                     slaveSelect,
+                                     CY_SMIF_TX_NOT_LAST_BYTE,
+                                     &spiContext);
+    ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == status,status);
+
+    Cy_SMIF_ReceiveDataBlocking(SMIF0, &cfgRegValue, 1u, CY_SMIF_WIDTH_SINGLE, &spiContext);
+    DBG_APP_INFO("SLV%d: Read Cfg Reg Value: 0x%x\r\n",slaveSelect - 1,cfgRegValue);
+
+    return cfgRegValue;
+}
+
+
+/**
  * \name Cy_SPI_FlashInit
  * \brief Function to initialize SPI Flash
- * \details Quad Mode - Data in x4 mode, Command in x1 mode
- *          QPI Mode - Data in x4 mode, Command in x4 mode
- *
- *          QPI enabled implies Quad enable.
- *
- *          Enable only Quad mode when writes to flash can be in x1 mode and only reads need to be in x4 mode (eg: Passive x4 mode with one x4 flash memory)
- *          Enable QPI mode when writes and reads should be in x4 mode (eg: Passive x8 mode with two x4 flash memories)
- *
  * \param flashIndex SPI Flash Index
- * \param quadEnable Quad Mode enable
- * \param qpiEnable QPI mode enable
  * \retval status
  */
-cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex, bool quadEnable, bool qpiEnable)
+cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex)
 {
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
     uint8_t flashID[CY_FLASH_ID_LENGTH]={0};
@@ -929,6 +1079,76 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
 }
 
 /**
+ * \name Cy_QSPI_WritePage
+ * \param address Flash address offset to write to
+ * \param txBuffer Buffer containing data to be written
+ * \param flashIndex
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_WritePage(
+    uint32_t address,
+    uint8_t *txBuffer,
+    cy_en_flash_index_t flashIndex
+){
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+
+    uint8_t addrArray[4];
+    cy_en_smif_txfr_width_t progWidth = CY_SMIF_WIDTH_SINGLE;
+    uint8_t progCmd = CY_SPI_PROGRAM_CMD;
+    uint32_t programWait = 0;
+
+    uint32_t chunk = CY_SPI_FLASH_PAGE_SIZE;
+
+    progCmd = CY_QSPI_PROGRAM_CMD;
+    progWidth = CY_SMIF_WIDTH_QUAD;
+
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);                    /* Convert address to 3 bytes*/ 
+    status = Cy_SPI_WriteEnable(flashIndex);
+
+    if(status==CY_SMIF_SUCCESS){
+        status =    Cy_SMIF_TransmitCommand(SMIF_HW,
+                    progCmd,
+                    glCommandWidth[flashIndex],
+                    addrArray,
+                    SPI_ADDRESS_BYTE_COUNT,
+                    glCommandWidth[flashIndex],
+                    (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+                    CY_SMIF_TX_NOT_LAST_BYTE,
+                    &spiContext);
+
+        if(status==CY_SMIF_SUCCESS){
+            status = Cy_SMIF_TransmitDataBlocking(
+                SMIF_HW,
+                txBuffer,
+                chunk,
+                progWidth,
+                &spiContext
+            );
+            if (status != CY_SMIF_SUCCESS){
+                DBG_APP_ERR("Error: Cy_SMIF_TransmitDataBlocking failed :0x%x\r\n", status);
+                return status;
+            }
+            else if(status == CY_SMIF_SUCCESS){
+                
+                while(Cy_SPI_IsMemBusy(flashIndex))
+                {
+                    if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
+                    {
+                        status =  CY_SMIF_EXCEED_TIMEOUT;
+                        break;
+                    }
+                    else
+                    {
+                        Cy_SysLib_DelayUs(1);
+                    }
+                }
+            }
+        }
+    }
+    return status;
+}
+
+/**
  * \name Cy_SPI_WriteOperation
  * \brief Function to initiate flash write operation
  * \param address flash address
@@ -959,6 +1179,45 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
     }
 
     return status;
+}
+
+/**
+ * \name Cy_QSPI_WriteOperation
+ * \brief Function to initiate QSPI flash write operation
+ * \param address Flash address offset to write to
+ * \param txBuffer Buffer containing data to be written
+ * \param length Length of data to write to flash
+ * \param numPages Number of Flash pages to write
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_WriteOperation(
+    uint32_t address,
+    uint8_t *txBuffer,
+    uint32_t length,
+    uint32_t numPages,
+    cy_en_flash_index_t flashIndex
+){
+    uint32_t pageIndex = 0;
+    uint32_t spiAddress = address;
+    uint32_t pageOffset = 0;
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+
+    for(pageIndex = 0; pageIndex < numPages; pageIndex++)
+    {
+        pageOffset = CY_SPI_FLASH_PAGE_SIZE * pageIndex;
+        status = Cy_QSPI_WritePage(spiAddress, txBuffer + pageOffset, flashIndex);
+        if(status != CY_SMIF_SUCCESS)
+        {
+            DBG_APP_ERR("Error: Write page failed at address 0x%x\r\n", spiAddress);
+            return status;
+        }
+
+        spiAddress += CY_SPI_FLASH_PAGE_SIZE;
+    }
+
+    return status;
+
 }
 
 /**
@@ -1025,4 +1284,45 @@ cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, ui
     return status;
 }
 
+/**
+ * \name Cy_QSPI_ReadOperation
+ * \brief Function to initiate QSPI flash read operation
+ * \param address Flash address offset to read from
+ * \param p_rxBuffer Buffer to store read data
+ * \param length Length of data to read from flash
+ * \param flashIndex Flash index
+ * \retval status
+ */
+cy_en_smif_status_t Cy_QSPI_ReadOperation(uint32_t address, uint8_t *p_rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex)
+{
+    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
+    uint8_t addrArray[SPI_ADDRESS_BYTE_COUNT];
 
+    Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);
+    status = Cy_SMIF_TransmitCommand(SMIF_HW,
+            CY_QSPI_READ_CMD,
+            glCommandWidth[flashIndex],
+            addrArray,
+            SPI_ADDRESS_BYTE_COUNT,
+            glReadWriteWidth[flashIndex],
+            (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
+            CY_SMIF_TX_NOT_LAST_BYTE,
+            &spiContext);
+    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+
+    /* Receive the data into the rxBuffer*/
+    if(status == CY_SMIF_SUCCESS)
+    {
+        /* If freq>=80MHz, need 8 dummy cycles before data reception begins */
+        Cy_SMIF_SendDummyCycles(SMIF_HW, 8);
+        status = Cy_SMIF_ReceiveDataBlocking(
+            SMIF_HW,
+            p_rxBuffer,
+            length,
+            CY_SMIF_WIDTH_QUAD,
+            &spiContext);
+        ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
+    }
+
+    return status;
+}

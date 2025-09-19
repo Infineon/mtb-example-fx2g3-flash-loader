@@ -272,15 +272,15 @@ void Cy_USB_USBHSInit (void)
     cy_stc_gpio_pin_config_t pinCfg;
     cy_stc_sysint_t intrCfg;
 
-	/* Do all the relevant clock configuration */
-	Cy_Fx2g3_InitPeripheralClocks(false, true);
+    /* Do all the relevant clock configuration */
+    Cy_Fx2g3_InitPeripheralClocks(false, true);
 
-	/* Unlock and then disable the watchdog. */
-	Cy_WDT_Unlock();
-	Cy_WDT_Disable();
+    /* Unlock and then disable the watchdog. */
+    Cy_WDT_Unlock();
+    Cy_WDT_Disable();
 
-	/* Enable interrupts. */
-	__enable_irq();
+    /* Enable interrupts. */
+    __enable_irq();
 
     memset((void *)&pinCfg, 0, sizeof(pinCfg));
 
@@ -465,8 +465,8 @@ int main (void)
     vTaskStartScheduler();
     while (1)
     {
-    	Cy_SysLib_Delay(10000);
-    	DBG_APP_INFO("Task Idle\r\n");
+        Cy_SysLib_Delay(10000);
+        DBG_APP_INFO("Task Idle\r\n");
     }
 
     return 0;

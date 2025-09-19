@@ -300,8 +300,13 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                 
                 if(retStatus == CY_USBD_STATUS_SUCCESS)
                 {
+#if SPI_QUAD_MODE
+                    smifStatus = Cy_QSPI_WriteOperation(spiAddress, (uint8_t*)pAppCtxt->qspiWriteBuffer, wLength, numPages,
+                                                    glFlashMode);
+#else
                     smifStatus = Cy_SPI_WriteOperation(spiAddress, (uint8_t*)pAppCtxt->qspiWriteBuffer, wLength,numPages,
                                                     glFlashMode);
+#endif /* SPI_QUAD_MODE */
                     ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == smifStatus,smifStatus);
                     DBG_APP_TRACE("numPages = %d.Program %d->%d done\r\n",numPages,spiAddress,spiAddress+(CY_APP_SPI_MAX_USB_TRANSFER_SIZE-1));
                     isReqHandled = true;
@@ -315,9 +320,11 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                 
                 DBG_APP_TRACE("SPI read..Windex=%d Wlength=%d spiAddress = %d\r\n",wIndex, wLength, spiAddress);
                 ASSERT_NON_BLOCK(wLength <= MAX_BUFFER_SIZE, wLength);
-
-                smifStatus = Cy_SPI_ReadOperation(spiAddress, pAppCtxt->qspiReadBuffer, wLength,
-                                glFlashMode);
+#if SPI_QUAD_MODE
+                smifStatus = Cy_QSPI_ReadOperation(spiAddress, pAppCtxt->qspiReadBuffer, wLength, glFlashMode);
+#else
+                smifStatus = Cy_SPI_ReadOperation(spiAddress, pAppCtxt->qspiReadBuffer, wLength, glFlashMode);
+#endif /* SPI_QUAD_MODE */
                 ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == smifStatus,smifStatus);
                 retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, pAppCtxt->qspiReadBuffer, wLength);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
@@ -353,7 +360,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                 {
                     Cy_SPI_ReadID((uint8_t*)pAppCtxt->qspiReadBuffer,glFlashMode);
                 }
-				retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)pAppCtxt->qspiReadBuffer,CY_FLASH_ID_LENGTH);
+                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)pAppCtxt->qspiReadBuffer,CY_FLASH_ID_LENGTH);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
                 {
                     isReqHandled = true;
@@ -394,11 +401,16 @@ Cy_USB_TaskHandler (void *pTaskParam)
     BaseType_t xStatus;
     uint32_t idleLoopCnt = 0;
 
+#if SPI_QUAD_MODE
+    Cy_QSPI_Start(pAppCtxt, SPI_FLASH_0);
+#else
     Cy_SPI_Start(pAppCtxt,SPI_FLASH_0);
-    DBG_APP_INFO("Flash Init \n\r:");
+#endif /* SPI_QUAD_MODE */
+
+    DBG_APP_INFO("Flash Init:\n\r");
 
 #if !FLASH_AT45D
-    Cy_SPI_FlashInit(SPI_FLASH_0, false, false);
+    Cy_SPI_FlashInit(SPI_FLASH_0);
 #endif /* !FLASH_AT45D */
 
     /* Enable USB-2 connection and wait until it is stable. */
@@ -407,6 +419,9 @@ Cy_USB_TaskHandler (void *pTaskParam)
     /* If VBus is present, enable the USB connection. */
     pAppCtxt->vbusPresent =
     (Cy_GPIO_Read(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN) == VBUS_DETECT_STATE);
+#if USBFS_LOGS_ENABLE
+    vTaskDelay(500);
+#endif /* USBFS_LOGS_ENABLE */
 
     if (pAppCtxt->vbusPresent) {
         Cy_USB_ConnectionEnable(pAppCtxt);
@@ -447,25 +462,25 @@ Cy_USB_TaskHandler (void *pTaskParam)
 
         switch (queueMsg.type) {
 
-        	case CY_USB_VBUS_CHANGE_INTR:
-			  /* Start the debounce timer. */
-			  xTimerStart(pAppCtxt->vbusDebounceTimer, 0);
-			  break;
+            case CY_USB_VBUS_CHANGE_INTR:
+              /* Start the debounce timer. */
+              xTimerStart(pAppCtxt->vbusDebounceTimer, 0);
+              break;
 
             case CY_USB_VBUS_CHANGE_DEBOUNCED:
-			  /* Check whether VBus state has changed. */
-			  pAppCtxt->vbusPresent = (Cy_GPIO_Read(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN) == VBUS_DETECT_STATE);
-			  if (pAppCtxt->vbusPresent) {
-				  if (!pAppCtxt->usbConnected) {
-					  DBG_APP_INFO("Enabling USB connection due to VBus detect\r\n");
-					  Cy_USB_ConnectionEnable(pAppCtxt);
-				  }
-			  } else {
-				  DBG_APP_INFO("Disabling USB connection due to VBus removal\r\n");
-				  Cy_USB_ConnectionDisable(pAppCtxt);
-			  }
-			  break;
-				  
+              /* Check whether VBus state has changed. */
+              pAppCtxt->vbusPresent = (Cy_GPIO_Read(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN) == VBUS_DETECT_STATE);
+              if (pAppCtxt->vbusPresent) {
+                  if (!pAppCtxt->usbConnected) {
+                      DBG_APP_INFO("Enabling USB connection due to VBus detect\r\n");
+                      Cy_USB_ConnectionEnable(pAppCtxt);
+                  }
+              } else {
+                  DBG_APP_INFO("Disabling USB connection due to VBus removal\r\n");
+                  Cy_USB_ConnectionDisable(pAppCtxt);
+              }
+              break;
+                  
             case CY_USB_MSG_CTRL_XFER_SETUP:
                 DBG_APP_TRACE("CY_USB_MSG_CTRL_XFER_SETUP\r\n");
                 Cy_USB_HandleCtrlSetup((void *)pAppCtxt, &queueMsg);
@@ -593,14 +608,14 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
             DBG_APP_ERR("TaskcreateFail\r\n");
             return;
         }
-		
+        
         pAppCtxt->vbusDebounceTimer = xTimerCreate("VbusDebounceTimer", 200, pdFALSE,
-				(void *)pAppCtxt, Cy_USB_VbusDebounceTimerCallback);
-		if (pAppCtxt->vbusDebounceTimer == NULL) {
-			DBG_APP_ERR("TimerCreateFail\r\n");
-			return;
-		}
-		DBG_APP_INFO("VBus debounce timer created\r\n");
+                (void *)pAppCtxt, Cy_USB_VbusDebounceTimerCallback);
+        if (pAppCtxt->vbusDebounceTimer == NULL) {
+            DBG_APP_ERR("TimerCreateFail\r\n");
+            return;
+        }
+        DBG_APP_INFO("VBus debounce timer created\r\n");
         pAppCtxt->firstInitDone = 0x01;
         
     }
@@ -761,5 +776,3 @@ void Cy_FailHandler(void)
 }
 
 /* [] END OF FILE */
-
-
