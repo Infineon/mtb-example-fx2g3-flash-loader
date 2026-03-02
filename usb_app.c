@@ -6,7 +6,7 @@
 *
 *******************************************************************************
 * \copyright
-* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2026), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -41,11 +41,11 @@ extern uint32_t Ep0TestBuffer[1024U];
 /**
  * \name Cy_USB_HandleCtrlSetup
  * \brief Handle control command given to application
- * \param pApp Application layer conetxt pointer
+ * \param pApp Application layer context pointer
  * \param pMsg App message queue
  * \retval None
  */
-void
+static void
 Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
 {
     cy_stc_usb_app_ctxt_t *pAppCtxt;
@@ -71,7 +71,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
     setupData0 = pMsg->data[0];
     setupData1 = pMsg->data[1];
 
-    DBG_APP_TRACE("Cy_USB_HandleCtrlSetup\r\n");
+    DBG_APP_TRACE("USB: Handle Control Requests \r\n");
     /* Decode the fields from the setup request. */
     bmRequest = (uint8_t)((setupData0 & CY_USB_BMREQUEST_SETUP0_MASK) >>
                            CY_USB_BMREQUEST_SETUP0_POS);
@@ -88,108 +88,85 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                                                 CY_USB_CTRL_REQ_TYPE_POS);
     bTarget = (bmRequest & CY_USB_CTRL_REQ_RECIPENT_MASK);
 
-    switch (reqType) {
-
+    switch (reqType) 
+    {
         case CY_USB_CTRL_REQ_STD:
-            DBG_APP_INFO("StdReq\r\n");
-            if ((bRequest == CY_USB_SC_SET_FEATURE) &&
-                (bTarget == CY_USB_CTRL_REQ_RECIPENT_ENDP) &&
-                (wValue == CY_USB_FEATURE_ENDP_HALT)) {
-                DBG_APP_INFO("SetFeatureReq: EndpHalt\r\n");
-                endpDir = ((wIndex & 0x80UL) ? (CY_USB_ENDP_DIR_IN) :
-                         (CY_USB_ENDP_DIR_OUT));
-                Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt,
-                                              ((uint32_t)wIndex & 0x7FUL),
-                                               endpDir, true);
-                Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                isReqHandled = true;
-            }
+            DBG_APP_INFO("USB: Standard request\r\n");
+            if ((bRequest == CY_USB_SC_SET_FEATURE) && (bTarget == CY_USB_CTRL_REQ_RECIPENT_ENDP) &&
+                (wValue == CY_USB_FEATURE_ENDP_HALT)) 
+                {       
+                    DBG_APP_INFO("USB: Set Feature request\r\n");
+                    endpDir = ((wIndex & 0x80UL) ? (CY_USB_ENDP_DIR_IN) :
+                             (CY_USB_ENDP_DIR_OUT));
+                    Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt,
+                                                  ((uint32_t)wIndex & 0x7FUL),
+                                                   endpDir, true);
+                    Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                    isReqHandled = true;
+                }
             
             if ((bRequest == CY_USB_SC_SET_FEATURE) &&
-                (bTarget == CY_USB_CTRL_REQ_RECIPENT_DEVICE)) {
-                switch (wValue) {
-                    case CY_USB_FEATURE_DEVICE_REMOTE_WAKE:
-                        DBG_APP_INFO("SetFeature:CY_USB_FEATURE_DEVICE_REMOTE_WAKE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
+                (bTarget == CY_USB_CTRL_REQ_RECIPENT_DEVICE)) 
+                {
+                    switch (wValue) {
+                        case CY_USB_FEATURE_DEVICE_REMOTE_WAKE:
+                            DBG_APP_INFO("USB: Set Feature - Remote Wake \r\n");
+                            Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                            isReqHandled = true;
+                            break;                   
+                        default:
+                        /* Unknown feature selector: Request will be stalled below. */
                         break;
-                    case CY_USB_FEATURE_U1_ENABLE:
-                        DBG_APP_INFO("SetFeature:CY_USB_FEATURE_U1_ENABLE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
-                        break;
-
-                    case CY_USB_FEATURE_U2_ENABLE:
-                        DBG_APP_INFO("SetFeature:CY_USB_FEATURE_U2_ENABLE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
-                        break;
-                    
-                    default:
-                    /* Unknown feature selector: Request will be stalled below. */
-                    break;
+                    }
                 }
-            }
 
             /* Handle FUNCTION_SUSPEND here */
-            if ((bRequest == CY_USB_SC_SET_FEATURE) &&
-                (bTarget == CY_USB_CTRL_REQ_RECIPENT_INTF) &&
-                (wValue == 0x00)) {
-                Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                isReqHandled = true;
-            }
+            if ((bRequest == CY_USB_SC_SET_FEATURE) && (bTarget == CY_USB_CTRL_REQ_RECIPENT_INTF) &&
+                (wValue == 0x00)) 
+                {
+                    Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                    isReqHandled = true;
+                }
 
-            if ((bRequest == CY_USB_SC_CLEAR_FEATURE) &&
-                (bTarget == CY_USB_CTRL_REQ_RECIPENT_ENDP) &&
-                (wValue == CY_USB_FEATURE_ENDP_HALT)) {
-                DBG_APP_INFO("ClearFeatureReq\r\n");
-
-                endpDir = ((wIndex & 0x80UL) ? (CY_USB_ENDP_DIR_IN) :
-                         (CY_USB_ENDP_DIR_OUT));
-                Cy_USBD_FlushEndp(pAppCtxt->pUsbdCtxt,
-                                  ((uint32_t)wIndex & 0x7FUL), endpDir);
-                Cy_USBD_ResetEndp(pAppCtxt->pUsbdCtxt,
-                                  ((uint32_t)wIndex & 0x7FUL), endpDir, false);
-                Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt,
-                                              ((uint32_t)wIndex & 0x7FUL),
-                                              endpDir, false);
-                Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                isReqHandled = true;
-            }
+            if ((bRequest == CY_USB_SC_CLEAR_FEATURE) && (bTarget == CY_USB_CTRL_REQ_RECIPENT_ENDP) &&
+                (wValue == CY_USB_FEATURE_ENDP_HALT)) 
+                {
+                    DBG_APP_INFO("USB: Clear Feature request\r\n");
+    
+                    endpDir = ((wIndex & 0x80UL) ? (CY_USB_ENDP_DIR_IN) :
+                             (CY_USB_ENDP_DIR_OUT));
+                    Cy_USBD_FlushEndp(pAppCtxt->pUsbdCtxt,
+                                      ((uint32_t)wIndex & 0x7FUL), endpDir);
+                    Cy_USBD_ResetEndp(pAppCtxt->pUsbdCtxt,
+                                      ((uint32_t)wIndex & 0x7FUL), endpDir, false);
+                    Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt,
+                                                  ((uint32_t)wIndex & 0x7FUL),
+                                                  endpDir, false);
+                    Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                    isReqHandled = true;
+                }
             
             if ((bRequest == CY_USB_SC_CLEAR_FEATURE) &&
-                (bTarget == CY_USB_CTRL_REQ_RECIPENT_DEVICE)) {
-                switch (wValue) {
-                    case CY_USB_FEATURE_DEVICE_REMOTE_WAKE:
-                        DBG_APP_INFO("ClrFeature:CY_USB_FEATURE_DEVICE_REMOTE_WAKE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        DBG_APP_INFO("Enabling LPM\r\n");
-                        Cy_USBD_LpmEnable(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
+                (bTarget == CY_USB_CTRL_REQ_RECIPENT_DEVICE)) 
+                {
+                    switch (wValue) {
+                        case CY_USB_FEATURE_DEVICE_REMOTE_WAKE:
+                            DBG_APP_INFO("USB: Clear Feature - Remote Wake \r\n");
+                            Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
+                            DBG_APP_INFO("USB: Enabling LPM\r\n");
+                            Cy_USBD_LpmEnable(pAppCtxt->pUsbdCtxt);
+                            isReqHandled = true;                        
                         break;
-
-                    case CY_USB_FEATURE_U1_ENABLE:
-                        DBG_APP_INFO("ClearFeature:CY_USB_FEATURE_U1_ENABLE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
+                        default:
+                            /*
+                             * Unknown feature selector so dont handle here.
+                             * just send stall.
+                             */
+                            DBG_APP_INFO("USB: default of wValue\r\n");
+                            isReqHandled = false;
                         break;
-
-                    case CY_USB_FEATURE_U2_ENABLE:
-                        DBG_APP_INFO("ClearFeature:CY_USB_FEATURE_U2_ENABLE\r\n");
-                        Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        isReqHandled = true;
-                        break;
-                    
-                    default:
-                        /*
-                         * Unknown feature selector so dont handle here.
-                         * just send stall.
-                         */
-                        DBG_APP_INFO("default of wValue\r\n");
-                        isReqHandled = false;
-                    break;
+                    }
                 }
-            }
 
             /* Handle Microsoft OS String Descriptor request. */
             if ((bTarget == CY_USB_CTRL_REQ_RECIPENT_DEVICE) &&
@@ -201,13 +178,13 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                     wLength = glOsString[0];
                 }
 
-                DBG_APP_INFO("OSString\r\n");
+                DBG_APP_INFO("USB: OS String\r\n");
                 retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt,
                                                       glOsString, wLength);
-                if (retStatus != CY_USBD_STATUS_SUCCESS) {
-                    DBG_APP_INFO("SendEp0Fail\r\n");
+                if (retStatus == CY_USBD_STATUS_SUCCESS) {
+                    isReqHandled = true;
                 }
-                isReqHandled = true;
+
             }
 
             break;
@@ -224,39 +201,35 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                     if (wLength > *((uint16_t *)glOsCompatibilityId)) {
                         wLength = *((uint16_t *)glOsCompatibilityId);
                     }
-                    DBG_APP_INFO("OSCompat\r\n");
+                    DBG_APP_INFO("USB: OSCompat\r\n");
                     retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt,
                                                  glOsCompatibilityId, wLength);
-                    if (retStatus != CY_USBD_STATUS_SUCCESS) {
-                        DBG_APP_INFO("SendEp0Fail\r\n");
+                    if (retStatus == CY_USBD_STATUS_SUCCESS) {
+                        isReqHandled = true;
                     }
-                    isReqHandled = true;
 
                 } else if (wIndex == 0x05) {
 
                     if (wLength > *((uint16_t *)glOsFeature)) {
                         wLength = *((uint16_t *)glOsFeature);
                     }
-                    DBG_APP_INFO("OSFeature\r\n");
+                    
+                    DBG_APP_INFO("USB: OSFeature\r\n");
                     retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt,
                                                           glOsFeature, wLength);
-                    if (retStatus != CY_USBD_STATUS_SUCCESS) {
-                        DBG_APP_INFO("SendEp0Fail\r\n");
+                    if (retStatus == CY_USBD_STATUS_SUCCESS) {
+                        isReqHandled = true;
                     }
-                    isReqHandled = true;
                 }
             }
-
-            DBG_APP_TRACE("bRequest = 0x%x\r\n",bRequest);
                   
             /* Handle SPI vendor commands */
             if (bRequest == FLASH_CMD_CHECK_SPI_SUPPORT)
             {
-                DBG_APP_INFO("FLASH_CMD_CHECK_SPI_SUPPORT\r\n");
+                DBG_APP_INFO("FL: Flash Check \r\n");
                 retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, fxFlashProg, sizeof(fxFlashProg));
                 if(retStatus == CY_USBD_STATUS_SUCCESS)
                 {
-                    DBG_APP_TRACE("Check flash prog done\r\n");
                     isReqHandled = true;
                 }
             }
@@ -270,7 +243,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                 ASSERT_NON_BLOCK(CY_USBD_STATUS_SUCCESS == retStatus, retStatus);
                 if(retStatus == CY_USBD_STATUS_SUCCESS)
                 {
-                    DBG_APP_INFO("Check status done (%d)\r\n",busyStat);
+                    DBG_APP_INFO("FL: Check status done. Busy status (%d)\r\n",busyStat);
                     isReqHandled = true;
                 }
             }
@@ -278,10 +251,10 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Write to SPI flash */
             if ((bRequest == FLASH_CMD_FLASH_WRITE) && (wLength == CY_APP_SPI_MAX_USB_TRANSFER_SIZE))
             {
-                DBG_APP_INFO("FLASH_CMD_FLASH_WRITE\r\n");
+                DBG_APP_INFO("FL: Flash Write Command\r\n");
                 spiAddress = wIndex * (CY_APP_SPI_MAX_USB_TRANSFER_SIZE);
                 glFlashMode = SPI_FLASH_0;
-                DBG_APP_TRACE("SPI Write..Wlength=%d spiAddress = %d, wIndex=%d %d\r\n", wLength,spiAddress, wIndex, wValue);
+                DBG_APP_TRACE("FL: Write length: %d, Flash address: %x, Index:%d, Value: %d\r\n", wLength,spiAddress, wIndex, wValue);
 
                 retStatus = Cy_USB_USBD_RecvEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)pAppCtxt->qspiWriteBuffer, wLength);
                 if (retStatus == CY_USBD_STATUS_SUCCESS)
@@ -291,7 +264,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                         Cy_SysLib_DelayUs(10);
                     }
                     if (!Cy_USBD_IsEp0ReceiveDone(pAppCtxt->pUsbdCtxt)) {
-                        DBG_APP_ERR("Receive timed out\r\n");
+                        DBG_APP_ERR("USB: EP0 Receive timed out\r\n");
                         Cy_USB_USBD_RetireRecvEndp0Data(pAppCtxt->pUsbdCtxt);
                         Cy_USB_USBD_EndpSetClearStall(pAppCtxt->pUsbdCtxt, 0x00, CY_USB_ENDP_DIR_IN, TRUE);
                         return;
@@ -308,7 +281,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                                                     glFlashMode);
 #endif /* SPI_QUAD_MODE */
                     ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == smifStatus,smifStatus);
-                    DBG_APP_TRACE("numPages = %d.Program %d->%d done\r\n",numPages,spiAddress,spiAddress+(CY_APP_SPI_MAX_USB_TRANSFER_SIZE-1));
+                    DBG_APP_TRACE("FL: Write Pages: %d, Program flash address %x to %x done\r\n",numPages,spiAddress,spiAddress+(CY_APP_SPI_MAX_USB_TRANSFER_SIZE-1));
                     isReqHandled = true;
                 }
             }
@@ -318,7 +291,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
                 spiAddress = wIndex * (CY_APP_SPI_MAX_USB_TRANSFER_SIZE);
                 glFlashMode = SPI_FLASH_0;
                 
-                DBG_APP_TRACE("SPI read..Windex=%d Wlength=%d spiAddress = %d\r\n",wIndex, wLength, spiAddress);
+                DBG_APP_TRACE("FL: Read Index : %d,  length : %d Flash address:%x\r\n",wIndex, wLength, spiAddress);
                 ASSERT_NON_BLOCK(wLength <= MAX_BUFFER_SIZE, wLength);
 #if SPI_QUAD_MODE
                 smifStatus = Cy_QSPI_ReadOperation(spiAddress, pAppCtxt->qspiReadBuffer, wLength, glFlashMode);
@@ -336,19 +309,18 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             /* Sector Erase to SPI flash */
             if (bRequest == FLASH_CMD_FLASH_SECTOR_ERASE)
             {
-                DBG_APP_INFO("FLASH_CMD_FLASH_SECTOR_ERASE\r\n");
+                DBG_APP_INFO("FL: Flash Erase Command\r\n");
                 sector = wIndex & 0xFF;
                 spiAddress = sector * CY_APP_SPI_FLASH_ERASE_SIZE;
                 {
                     if((Cy_SPI_SectorErase(SPI_FLASH_0, spiAddress) == CY_SMIF_SUCCESS) )
                     {
                         Cy_USBD_SendACkSetupDataStatusStage(pAppCtxt->pUsbdCtxt);
-                        DBG_APP_TRACE("SPI Erase Done\r\n");
                         isReqHandled = true;
                     }
                     else
                     {
-                        DBG_APP_ERR("SPI Erase failed\r\n");
+                        DBG_APP_ERR("FL: Flash Erase failed\r\n");
                     }
                 }
             }
@@ -370,7 +342,7 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
         break;
 
         default:
-            DBG_APP_INFO("HandleCtrlSetup:Default\r\n");
+            DBG_APP_INFO("USB: Default\r\n");
             break;
             
     }
@@ -400,14 +372,11 @@ Cy_USB_TaskHandler (void *pTaskParam)
 
     BaseType_t xStatus;
     uint32_t idleLoopCnt = 0;
-
-#if SPI_QUAD_MODE
-    Cy_QSPI_Start(pAppCtxt, SPI_FLASH_0);
-#else
+    
     Cy_SPI_Start(pAppCtxt,SPI_FLASH_0);
-#endif /* SPI_QUAD_MODE */
 
-    DBG_APP_INFO("Flash Init:\n\r");
+
+    DBG_APP_INFO("FL: Flash Init:\n\r");
 
 #if !FLASH_AT45D
     Cy_SPI_FlashInit(SPI_FLASH_0);
@@ -427,8 +396,6 @@ Cy_USB_TaskHandler (void *pTaskParam)
         Cy_USB_ConnectionEnable(pAppCtxt);
     }
 
-    DBG_APP_INFO("ThreadActive\r\n");
-
     do {
 #if WATCHDOG_RESET_EN
         /* Kick The WDT to prevent RESET */
@@ -444,7 +411,7 @@ Cy_USB_TaskHandler (void *pTaskParam)
             idleLoopCnt++;
             if (idleLoopCnt >= 10000UL) {
                 idleLoopCnt = 0;
-                DBG_APP_INFO("TaskIdle\r\n");
+                DBG_APP_INFO("FL: TaskIdle\r\n");
             }
 
             continue;
@@ -472,58 +439,27 @@ Cy_USB_TaskHandler (void *pTaskParam)
               pAppCtxt->vbusPresent = (Cy_GPIO_Read(VBUS_DETECT_GPIO_PORT, VBUS_DETECT_GPIO_PIN) == VBUS_DETECT_STATE);
               if (pAppCtxt->vbusPresent) {
                   if (!pAppCtxt->usbConnected) {
-                      DBG_APP_INFO("Enabling USB connection due to VBus detect\r\n");
+                      DBG_APP_INFO("USB: Enabling USB connection due to VBus detect\r\n");
                       Cy_USB_ConnectionEnable(pAppCtxt);
                   }
               } else {
-                  DBG_APP_INFO("Disabling USB connection due to VBus removal\r\n");
+                  DBG_APP_INFO("USB: Disabling USB connection due to VBus removal\r\n");
                   Cy_USB_ConnectionDisable(pAppCtxt);
               }
               break;
                   
             case CY_USB_MSG_CTRL_XFER_SETUP:
-                DBG_APP_TRACE("CY_USB_MSG_CTRL_XFER_SETUP\r\n");
+                DBG_APP_TRACE("USB: Control Request event \r\n");
                 Cy_USB_HandleCtrlSetup((void *)pAppCtxt, &queueMsg);
                 break;
 
-
-            case CY_USB_ENDP0_READ_TIMEOUT:
-                DBG_APP_INFO("Endp0ReadTimeout\r\n");
-                /*
-                 * When application layer wants to recieve data from
-                 * host through endpoint 0 then device initiate RcvEndp0
-                 * function call and start timer. When timer ends and still
-                 * data is not recieved then TIMER interrupt will send
-                 * CY_USB_ENDP0_READ_TIMEOUT message. If data is recieved then
-                 * case which handles data should stop timer.
-                 */
-                Cy_USB_USBD_RetireRecvEndp0Data(pAppCtxt->pUsbdCtxt);
-                break;
-
-
             default:
-                DBG_APP_ERR("Default %d\r\n", queueMsg.type);
+                DBG_APP_ERR("FL: Default message %x\r\n", queueMsg.type);
                 break;
         }   /* end of switch() */
     
     } while (1);
 }   /* End of function  */
-
-/**
- * \name Cy_USB_Endp0ReadComplete
- * \brief Handler for DMA transfer completion on endpoint 0 OUT Transfer.
- * \param pApp application layer context pointer
- * \retval None
- */
-void
-Cy_USB_Endp0ReadComplete (void *pApp)
-{
-    BaseType_t status;
-    DBG_APP_TRACE("Sent CY_USB_ENDP0_READ_COMPLETE\r\n");
-
-    (void)status;
-    return;
-}   /* end of function */
 
 /**
  * \name Cy_USB_VbusDebounceTimerCallback
@@ -538,7 +474,7 @@ Cy_USB_VbusDebounceTimerCallback (TimerHandle_t xTimer)
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     cy_stc_usbd_app_msg_t xMsg;
 
-    DBG_APP_INFO("VbusDebounce_CB\r\n");
+    DBG_APP_INFO("USB: VBUS Timer CB\r\n");
     if (pAppCtxt->vbusChangeIntr) {
         /* Notify the VCOM task that VBus debounce is complete. */
         xMsg.type = CY_USB_VBUS_CHANGE_DEBOUNCED;
@@ -572,7 +508,6 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
     pAppCtxt->devState = CY_USB_DEVICE_STATE_DISABLE;
     pAppCtxt->prevDevState = CY_USB_DEVICE_STATE_DISABLE;
 
-    DBG_APP_INFO("Cy_USB_AppInit\r\n");
     /*
      * Initially application sees device speed as USBFS and during set
      * configuration application will update actual device speed.
@@ -598,24 +533,29 @@ Cy_USB_AppInit (cy_stc_usb_app_ctxt_t *pAppCtxt,
         /* create queue and register it to kernel. */
         pAppCtxt->xQueue = xQueueCreate(CY_USB_MSG_QUEUE_SIZE,
                                         CY_USB_MSG_SIZE);
-        DBG_APP_INFO("CreatedQueue\r\n");
+        if (pAppCtxt->xQueue == NULL) {
+            DBG_APP_ERR("FL: Queue create failed\r\n");
+            return;
+        }
         vQueueAddToRegistry(pAppCtxt->xQueue, "MsgQueue");
 
         /* Create task and check status to confirm task created properly. */
         status = xTaskCreate(Cy_USB_TaskHandler, "Task", 2048,
                         (void *)pAppCtxt, 5, &(pAppCtxt->taskHandle));
-        if (status != pdPASS) {
-            DBG_APP_ERR("TaskcreateFail\r\n");
+        if (status != pdPASS)
+        {
+            DBG_APP_ERR("FL: Task create failed \r\n");
             return;
         }
         
         pAppCtxt->vbusDebounceTimer = xTimerCreate("VbusDebounceTimer", 200, pdFALSE,
                 (void *)pAppCtxt, Cy_USB_VbusDebounceTimerCallback);
         if (pAppCtxt->vbusDebounceTimer == NULL) {
-            DBG_APP_ERR("TimerCreateFail\r\n");
+            DBG_APP_ERR("USB: Timer create failed\r\n");
             return;
         }
-        DBG_APP_INFO("VBus debounce timer created\r\n");
+        
+        DBG_APP_INFO("USB: VBus debounce timer created\r\n");
         pAppCtxt->firstInitDone = 0x01;
         
     }
@@ -658,7 +598,7 @@ Cy_USB_AppBusResetCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
 
     pUsbApp = (cy_stc_usb_app_ctxt_t *)pAppCtxt;
 
-    DBG_APP_INFO("ResetCallback >>\r\n");
+    DBG_APP_INFO("USB: Bus Reset CB\r\n");
     /*
      * USBD layer takes care of reseting its own data structure as well as
      * takes care of calling CAL reset APIs. Application needs to take care
@@ -669,7 +609,6 @@ Cy_USB_AppBusResetCallback (void *pAppCtxt, cy_stc_usb_usbd_ctxt_t *pUsbdCtxt,
     pUsbApp->devState = CY_USB_DEVICE_STATE_RESET;
     pUsbApp->prevDevState = CY_USB_DEVICE_STATE_RESET;
 
-    DBG_APP_INFO("ResetCallback <<\r\n\r\n");
     return;
 }   /* end of function. */
 

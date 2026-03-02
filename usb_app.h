@@ -6,7 +6,7 @@
 *
 *******************************************************************************
 * \copyright
-* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2026), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -44,7 +44,6 @@ extern "C" {
 #define ASSERT_AND_HANDLE(condition, value, failureHandler) Cy_CheckStatusHandleFailure(__func__, __LINE__, condition, value, false, Cy_FailHandler);
 
 #define CY_USB_MSG_CTRL_XFER_SETUP          (0x0A)
-#define CY_USB_ENDP0_READ_TIMEOUT           (0x0D)
 #define CY_USB_VBUS_CHANGE_INTR             (0x0E)
 #define CY_USB_VBUS_CHANGE_DEBOUNCED        (0x0F)
 

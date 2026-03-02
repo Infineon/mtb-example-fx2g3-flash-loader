@@ -6,7 +6,7 @@
 *
 *******************************************************************************
 * \copyright
-* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2026), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -89,7 +89,7 @@ static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_flash_index_t flashIndex)
     
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -127,12 +127,11 @@ static cy_en_smif_status_t Cy_SPI_WriteEnable(cy_en_flash_index_t flashIndex)
     if(statusVal & CY_SPI_WRITE_ENABLE_LATCH_MASK)
     {
         status = CY_SMIF_SUCCESS;
-        DBG_APP_TRACE("Write Enable Passed\r\n");
     }
     else
     {
         status = CY_SMIF_BUSY;
-        DBG_APP_ERR("Write Enable failed\r\n");
+        DBG_APP_ERR("SPI: Write Enable failed %x\r\n",status);
     }
 #endif /* !FLASH_AT45D */
 
@@ -344,7 +343,7 @@ cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIn
 
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+         DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -379,7 +378,7 @@ bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex)
     /* Send status register read command */
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -402,7 +401,7 @@ bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex)
             &spiContext);
     ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
 
-    DBG_APP_TRACE("Cy_SPI_IsMemBusy %x\r\n",statusVal);
+    DBG_APP_TRACE("SPI: Busy Status %x\r\n",statusVal);
 
     return ((statusVal & CY_SPI_WIP_MASK) == CY_SPI_WIP_STATUS);
 }
@@ -424,96 +423,46 @@ cy_en_smif_status_t Cy_SPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_in
 
     memset(pAppCtxt->qspiWriteBuffer, 0, MAX_BUFFER_SIZE);
     memset(pAppCtxt->qspiReadBuffer, 0, MAX_BUFFER_SIZE);
- 
-    /* SPI is connected to CLK_HF1. As per current clock configuration in Cy_Fx2g3_clk_init, CLK_HF1 is connected Clock path #1 (PLL#0) at 150 MHz  */
-    Cy_SysClk_ClkHfDisable(CY_SYSCLK_SPI_CLK_HF1);
-    Cy_SysClk_ClkHfSetSource(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_IN_CLKPATH1);
 
-    /* Selected SPI Clock = 150M/DIVIDER */
-    Cy_SysClk_ClkHfSetDivider(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_DIVIDE_BY_4);
-    Cy_SysClk_ClkHfEnable(CY_SYSCLK_SPI_CLK_HF1);
+   /* Change QSPI Clock to 75 MHz / <DIVIDER> value */
+    Cy_SysClk_ClkHfDisable(1);
+    Cy_SysClk_ClkHfSetSource(1, CY_SYSCLK_CLKHF_IN_CLKPATH1);
+    Cy_SysClk_ClkHfSetDivider(1, CY_SYSCLK_CLKHF_DIVIDE_BY_2);
+    Cy_SysClk_ClkHfEnable(1);
+    
+    /*Initialize SMIF Pins for SPI*/
     Cy_SPI_ConfigureSMIFPins(true);
 
     status = Cy_SMIF_Init(SMIF_HW, &spiConfig, 10000u, &spiContext);
-    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
-
-    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_0, CY_SMIF_DATA_SEL0);
-    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_1, CY_SMIF_DATA_SEL2);
+    if(status == CY_SMIF_SUCCESS)
+    {
+        Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_0, CY_SMIF_DATA_SEL0);
+        Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_1, CY_SMIF_DATA_SEL2);
+        
+        Cy_SMIF_Enable(SMIF_HW, &spiContext);
+        
+        DBG_APP_INFO("SPI: Enabled \n\r:");
+        
+#if SPI_QUAD_MODE       
+        /* Enable QSPI, write to config register 1 */
+        uint8_t cr1 = Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0);
+        Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_1);
     
-    Cy_SMIF_Enable(SMIF_HW, &spiContext);
-
-    while(Cy_SPI_IsMemBusy(flashIndex)) { 
-        if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US) 
-        { 
-            status = CY_SMIF_EXCEED_TIMEOUT; 
-            DBG_APP_ERR("Error: Program Timeout\r\n"); 
-            break; 
-        } 
+        Cy_App_WriteConfigurationRegister(CY_SMIF_SLAVE_SELECT_0, cr1 | 0x02); /* 0010 */
+        Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0); /* Verify QUAD mode */
+#endif /* SPI_QUAD_MODE */  
+        while(Cy_SPI_IsMemBusy(flashIndex)) { 
+            if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US) 
+            { 
+                status = CY_SMIF_EXCEED_TIMEOUT; 
+                DBG_APP_ERR("SPI: Program Timeout\r\n"); 
+                break; 
+            } 
+        }
+    
     }
-
-    DBG_APP_INFO("SPI Initialization Done\r\n");
-    DBG_APP_INFO("SPI Clock = %d\r\n",Cy_SysClk_ClkHfGetFrequency(CY_SYSCLK_SPI_CLK_HF1));
+   
     return status;
-}
-
-/**
- * \name Cy_QSPI_Start
- * \brief Function to enable SPI block and configure for Quad Mode before initialization
- * \details Quad Mode - Data in x4 mode, Commands in x1 mode
- * \param pAppCtxt Application context pointer
- * \param flashIndex Flash index
- * \retval status
- */
-cy_en_smif_status_t Cy_QSPI_Start(cy_stc_usb_app_ctxt_t *pAppCtxt, cy_en_flash_index_t flashIndex)
-{
-    cy_en_smif_status_t status = CY_SMIF_SUCCESS;
-    uint32_t programWait = 0;
-
-    pAppCtxt->qspiWriteBuffer = writeBuffer;
-    pAppCtxt->qspiReadBuffer = readBuffer;
-
-    memset(pAppCtxt->qspiWriteBuffer, 0, MAX_BUFFER_SIZE);
-    memset(pAppCtxt->qspiReadBuffer, 0, MAX_BUFFER_SIZE);
- 
-    /* SPI is connected to CLK_HF1. As per current clock configuration in Cy_Fx2g3_clk_init, CLK_HF1 is connected Clock path #1 (PLL#0) at 150 MHz  */
-    Cy_SysClk_ClkHfDisable(CY_SYSCLK_SPI_CLK_HF1);
-    Cy_SysClk_ClkHfSetSource(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_IN_CLKPATH1);
-
-    /* Selected SPI Clock = 150M/DIVIDER */
-    Cy_SysClk_ClkHfSetDivider(CY_SYSCLK_SPI_CLK_HF1, CY_SYSCLK_CLKHF_DIVIDE_BY_4);
-    Cy_SysClk_ClkHfEnable(CY_SYSCLK_SPI_CLK_HF1);
-
-    /* Initialize SMIF pins */
-    Cy_SPI_ConfigureSMIFPins(true);
-
-    status = Cy_SMIF_Init(SMIF_HW, &spiConfig, 10000u, &spiContext);
-    ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
-
-    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_0, CY_SMIF_DATA_SEL0);
-    Cy_SMIF_SetDataSelect(SMIF_HW, CY_SMIF_SLAVE_SELECT_1, CY_SMIF_DATA_SEL2);
-    
-    Cy_SMIF_Enable(SMIF_HW, &spiContext);
-
-    /* Enable QSPI, write to config register 1 */
-    uint8_t cr1 = Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0);
-    Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_1);
-    
-    Cy_App_WriteConfigurationRegister(CY_SMIF_SLAVE_SELECT_0, cr1 | 0x02); /* 0010 */
-    Cy_App_ReadConfigRegister(CY_SMIF_SLAVE_SELECT_0); /* Verify QUAD mode */
-
-    while(Cy_SPI_IsMemBusy(flashIndex)) { 
-        if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US) 
-        { 
-            status = CY_SMIF_EXCEED_TIMEOUT; 
-            DBG_APP_ERR("Error: Program Timeout\r\n"); 
-            break; 
-        } 
-    }
-
-    DBG_APP_INFO("SPI Initialization Done\r\n");
-    DBG_APP_INFO("SPI Clock = %d\r\n", Cy_SysClk_ClkHfGetFrequency(CY_SYSCLK_SPI_CLK_HF1));
-    return status;
-
 }
 
 /**
@@ -589,7 +538,7 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
 
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -608,11 +557,11 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
     ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
     cfiFlashMap->deviceSizeFactor = rxBuffer[CY_CFI_DEVICE_SIZE_OFFSET];
     cfiFlashMap->deviceSize = (uint32_t)(1u << cfiFlashMap->deviceSizeFactor);
-    DBG_APP_INFO("DeviceSize = 0x%x[%d]\r\n", (cfiFlashMap->deviceSize), (cfiFlashMap->deviceSize));
+    DBG_APP_INFO("SPI: Flash Size = 0x%x[%d]\r\n", (cfiFlashMap->deviceSize), (cfiFlashMap->deviceSize));
 
     /* Parse the CFI buffer and understand possible memory array layouts */
     cfiFlashMap->numEraseRegions = rxBuffer[CY_CFI_NUM_ERASE_REGION_OFFSET];
-    DBG_APP_INFO("Number of erase regions = %d\r\n", cfiFlashMap->numEraseRegions);
+    DBG_APP_INFO("SPI: Number of Erase regions: %d\r\n", cfiFlashMap->numEraseRegions);
 
     if(cfiFlashMap->numEraseRegions < CY_CFI_TABLE_LENGTH)
     {
@@ -645,7 +594,7 @@ static cy_en_smif_status_t Cy_SPI_ReadCFIMap (cy_stc_cfi_flash_map_t *cfiFlashMa
                 cfiFlashMap->num4KBParameterRegions++;
             }
 
-            DBG_APP_INFO("Erase region:%d, numSectors=%d, sectorSize=0x%x, startingAddress=0x%x\r\n",eraseRegionIndex,
+            DBG_APP_INFO("SPI: Erase region:%d, numSectors=%d, sectorSize=0x%x, startingAddress=0x%x\r\n",eraseRegionIndex,
                     cfiFlashMap->memoryLayout[eraseRegionIndex].numSectors,
                     cfiFlashMap->memoryLayout[eraseRegionIndex].sectorSize,
                     cfiFlashMap->memoryLayout[eraseRegionIndex].startingAddress);
@@ -669,10 +618,10 @@ void Cy_App_WriteConfigurationRegister(cy_en_smif_slave_select_t slaveSelect, ui
     dataArray[0] = 0; // Status Register
     dataArray[1] = value;
 
-    DBG_APP_INFO("SLV%d:Write %d to Config Register 1\r\n", slaveSelect - 1, value);
+    DBG_APP_INFO("SPI: Slave %d - Write %d to Config Register 1\r\n", slaveSelect - 1, value);
 
     if(Cy_SPI_WriteEnable(SPI_FLASH_0)!=CY_SMIF_SUCCESS){
-        DBG_APP_ERR("Cy_SPI_WriteEnable failed, halting write to CR1\r\n");
+        DBG_APP_ERR("SPI: SPI Write enable failed, halting write to CR1\r\n");
         return;
     }
 
@@ -721,7 +670,7 @@ uint8_t Cy_App_QSPIStatus1Read(cy_en_smif_slave_select_t slaveSelect)
                             &spiContext);
 
     Cy_SMIF_ReceiveDataBlocking(SMIF0, &statusVal, 1u, CY_SMIF_WIDTH_SINGLE, &spiContext);
-    DBG_APP_INFO("SLV%d:Status Register 01: 0x%x\r\n",slaveSelect-1,statusVal);
+    DBG_APP_INFO("SPI: Slave: %d - Status Register 01: 0x%x \r\n",slaveSelect-1,statusVal);
     return statusVal;
 }
 
@@ -748,7 +697,7 @@ uint8_t Cy_App_ReadConfigRegister(cy_en_smif_slave_select_t slaveSelect)
     ASSERT_NON_BLOCK(CY_SMIF_SUCCESS == status,status);
 
     Cy_SMIF_ReceiveDataBlocking(SMIF0, &cfgRegValue, 1u, CY_SMIF_WIDTH_SINGLE, &spiContext);
-    DBG_APP_INFO("SLV%d: Read Cfg Reg Value: 0x%x\r\n",slaveSelect - 1,cfgRegValue);
+    DBG_APP_INFO("SPI: Slave: %d - Cfg Register Val: 0x%x\r\n",slaveSelect - 1,cfgRegValue);
 
     return cfgRegValue;
 }
@@ -789,7 +738,7 @@ static cy_en_smif_status_t Cy_SPI_UniformSectorErase(cy_en_flash_index_t flashIn
     cy_en_smif_status_t status = CY_SMIF_SUCCESS;
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+        DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -811,7 +760,7 @@ static cy_en_smif_status_t Cy_SPI_UniformSectorErase(cy_en_flash_index_t flashIn
                 CY_SMIF_TX_LAST_BYTE,
                 &spiContext);
 
-        DBG_APP_INFO("Uniform sector erase from 0x%x\r\n", address);
+        DBG_APP_INFO("SPI: Uniform sector erase from address: 0x%x\r\n", address);
         ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
     }
     return status;
@@ -831,7 +780,7 @@ static cy_en_smif_status_t Cy_SPI_HybridSectorErase(cy_en_flash_index_t flashInd
     
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+         DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
     Cy_SPI_AddressToArray(address, addrArray, SPI_ADDRESS_BYTE_COUNT);
@@ -850,7 +799,7 @@ static cy_en_smif_status_t Cy_SPI_HybridSectorErase(cy_en_flash_index_t flashInd
                 (cy_en_smif_slave_select_t)glSlaveSelectIndex[flashIndex],
                 CY_SMIF_TX_LAST_BYTE,
                 &spiContext);
-        DBG_APP_TRACE("4KB region erase from 0x%x\r\n", address);
+      
         ASSERT_NON_BLOCK(status == CY_SMIF_SUCCESS, status);
     }
     return status;
@@ -878,13 +827,13 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
 
     if(flashIndex == DUAL_SPI_FLASH)
     {
-        DBG_APP_ERR("[%s]Invalid flashIndex. Access both flash memories separately\r\n",__func__);
+                 DBG_APP_ERR("SPI: Invalid flashIndex. Access both flash memories separately\r\n");
         return CY_SMIF_BAD_PARAM;
     }
 
     if(address >= glCfiFlashMap[flashIndex].deviceSize)
     {
-        DBG_APP_ERR("[%s]Invalid Address.\r\n",__func__);
+        DBG_APP_ERR("SPI: [%s]Invalid Address.\r\n",__func__);
         return CY_SMIF_BAD_PARAM;
     }
 
@@ -910,7 +859,7 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
                             if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
                             {
                                 status =  CY_SMIF_EXCEED_TIMEOUT;
-                                DBG_APP_ERR(" Cy_SPI_HybridSectorErase TIMEOUT!! %x\r\n",status);
+                                DBG_APP_ERR("SPI: Hybrid erase sector failed %x!! %x\r\n",status);
                                 break;
                             }
                             else
@@ -921,7 +870,7 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
                     }
                     else
                     {
-                        DBG_APP_ERR(" Cy_SPI_HybridSectorErase failed %x\r\n",status);
+                       DBG_APP_ERR("SPI: Hybrid erase sector failed %x!! %x\r\n",status);
                     }
                 }
             }
@@ -936,7 +885,7 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
         if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
         {
             status =  CY_SMIF_EXCEED_TIMEOUT;
-            DBG_APP_ERR(" Cy_SPI_HybridSectorErase TIMEOUT!! %x\r\n",status);
+            DBG_APP_ERR("SPI: Uniform erase sector failed %x!! %x\r\n",status);
             break;
         }
         else
@@ -948,6 +897,7 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
 #endif
 }
 
+#if !SPI_QUAD_MODE
 /**
  * \name Cy_SPI_WritePage
  * \brief Function to Write to Flash page
@@ -982,7 +932,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
 
         if (status != CY_SMIF_SUCCESS)
         {
-            DBG_APP_ERR("Error: Buffer1 WR cmd status:0x%x\r\n", status);
+            DBG_APP_ERR("SPI:  Buffer-1 Write Failed :0x%x\r\n", status);
             return status;
         }
 
@@ -996,7 +946,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
 
         if (status != CY_SMIF_SUCCESS)
         {
-            DBG_APP_ERR("Error: Buffer1 WR data cmd status:0x%x\r\n", status);
+            DBG_APP_ERR("SPI:  Buffer-1 Write Failed :0x%x\r\n", status);
             return status;
         }
         
@@ -1016,7 +966,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
         );
         if (status != CY_SMIF_SUCCESS)
         {
-            DBG_APP_ERR("Error: Buffer 1 to Main Memory cmd status:0x%x\r\n", status);
+             DBG_APP_ERR("SPI:  Buffer-1 to main mem write Failed :0x%x\r\n", status);
             return status;
         }
 
@@ -1025,7 +975,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
             if(programWait++ >= CY_SPI_PROGRAM_TIMEOUT_US)
             {
                 status = CY_SMIF_EXCEED_TIMEOUT;
-                DBG_APP_ERR("Error: Program Timeout\r\n");
+                DBG_APP_ERR("SPI: Program Timeout\r\n");
                 break;
             }
         }
@@ -1052,7 +1002,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
                     glReadWriteWidth[flashIndex], &spiContext);
             if (status != CY_SMIF_SUCCESS)
             {
-                DBG_APP_ERR("Error: Cy_SMIF_TransmitDataBlocking failed :0x%x\r\n", status);
+                DBG_APP_ERR("SPI: Data Transmit failed :0x%x\r\n", status);
                 return status;
             }
             else if(status == CY_SMIF_SUCCESS)
@@ -1077,7 +1027,7 @@ cy_en_smif_status_t Cy_SPI_WritePage(uint32_t address, uint8_t *txBuffer, cy_en_
 #endif /* FLASH_AT45D */
     return status;
 }
-
+#else
 /**
  * \name Cy_QSPI_WritePage
  * \param address Flash address offset to write to
@@ -1125,7 +1075,7 @@ cy_en_smif_status_t Cy_QSPI_WritePage(
                 &spiContext
             );
             if (status != CY_SMIF_SUCCESS){
-                DBG_APP_ERR("Error: Cy_SMIF_TransmitDataBlocking failed :0x%x\r\n", status);
+                DBG_APP_ERR("SPI: Transmit data failed :0x%x\r\n", status);
                 return status;
             }
             else if(status == CY_SMIF_SUCCESS){
@@ -1147,7 +1097,9 @@ cy_en_smif_status_t Cy_QSPI_WritePage(
     }
     return status;
 }
+#endif /* SPI_QUAD_MODE */
 
+#if !SPI_QUAD_MODE
 /**
  * \name Cy_SPI_WriteOperation
  * \brief Function to initiate flash write operation
@@ -1171,7 +1123,7 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
         status = Cy_SPI_WritePage(spiAddress, txBuffer + pageOffset, flashIndex);
         if(status != CY_SMIF_SUCCESS)
         {
-            DBG_APP_ERR("Error: Write page failed at address 0x%x\r\n", spiAddress);
+            DBG_APP_ERR("SPI: Write page failed at address 0x%x\r\n", spiAddress);
             return status;
         }
 
@@ -1180,7 +1132,7 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
 
     return status;
 }
-
+#else
 /**
  * \name Cy_QSPI_WriteOperation
  * \brief Function to initiate QSPI flash write operation
@@ -1219,7 +1171,9 @@ cy_en_smif_status_t Cy_QSPI_WriteOperation(
     return status;
 
 }
+#endif /* SPI_QUAD_MODE */
 
+#if !SPI_QUAD_MODE
 /**
  * \name Cy_SPI_ReadOperation
  * \brief Function to initiate flash write operation
@@ -1255,7 +1209,7 @@ cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, ui
     status = Cy_SMIF_ReceiveDataBlocking(SMIF_HW, rxBuffer, length, glReadWriteWidth[flashIndex], &spiContext);
     if (status != CY_SMIF_SUCCESS)
     {
-        DBG_APP_ERR("Error: Cy_SPI_ReadOperation read data 0x%x\r\n", status);
+        DBG_APP_ERR("SPI: Read Data Failed  0x%x\r\n", status);
         return status;
     }
 
@@ -1283,7 +1237,7 @@ cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, ui
 #endif /* FLASH_AT45D */ 
     return status;
 }
-
+#else
 /**
  * \name Cy_QSPI_ReadOperation
  * \brief Function to initiate QSPI flash read operation
@@ -1326,3 +1280,4 @@ cy_en_smif_status_t Cy_QSPI_ReadOperation(uint32_t address, uint8_t *p_rxBuffer,
 
     return status;
 }
+#endif /* SPI_QUAD_MODE */

@@ -6,7 +6,7 @@
 *
 *******************************************************************************
 * \copyright
-* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2026), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -204,6 +204,7 @@ cy_en_smif_status_t Cy_SPI_ReadID(uint8_t *rxBuffer, cy_en_flash_index_t flashIn
  */
 bool Cy_SPI_IsMemBusy(cy_en_flash_index_t flashIndex);
 
+#if !SPI_QUAD_MODE
 /**
  * \name Cy_SPI_WriteOperation
  * \brief Function to initiate flash write operation
@@ -226,6 +227,7 @@ cy_en_smif_status_t Cy_SPI_WriteOperation(uint32_t address, uint8_t *txBuffer, u
  * \return status
  */
 cy_en_smif_status_t Cy_SPI_ReadOperation(uint32_t address, uint8_t *rxBuffer, uint32_t length, cy_en_flash_index_t flashIndex);
+#endif /* SPI_QUAD_MODE */
 
 /**
  * \name Cy_SPI_SectorErase
@@ -244,8 +246,8 @@ cy_en_smif_status_t Cy_SPI_SectorErase(cy_en_flash_index_t flashIndex, uint32_t 
  */
 cy_en_smif_status_t Cy_SPI_FlashInit (cy_en_flash_index_t flashIndex);
 
+#if SPI_QUAD_MODE
 /* QSPI-related function prototypes */
-
 /**
  * \name Cy_App_ReadConfigRegister
  * \brief Function to read configuration register from QSPI flash device
@@ -303,5 +305,6 @@ cy_en_smif_status_t Cy_QSPI_ReadOperation(uint32_t address, uint8_t *p_rxBuffer,
  * \retval status
  */
 cy_en_smif_status_t Cy_QSPI_WriteOperation(uint32_t address, uint8_t *txBuffer, uint32_t length, uint32_t numPages, cy_en_flash_index_t flashIndex);
+#endif /* SPI_QUAD_MODE */
 
 #endif /* _SPI_H_ */

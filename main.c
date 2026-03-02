@@ -10,7 +10,7 @@
 *
 *******************************************************************************
 * \copyright
-* (c) (2025), Cypress Semiconductor Corporation (an Infineon company) or
+* (c) (2026), Cypress Semiconductor Corporation (an Infineon company) or
 * an affiliate of Cypress Semiconductor Corporation.
 *
 * SPDX-License-Identifier: Apache-2.0
@@ -48,7 +48,7 @@
 #define LOGGING_SCB_IDX         (4)
 #define DEBUG_LEVEL             (3u)
 
-/* Debug log related initilization */
+/* Debug log related initialization */
 #if DEBUG_INFRA_EN
 
 #define LOGBUF_SIZE (1024u)
@@ -102,7 +102,13 @@ void vPortSetupTimerInterrupt(void)
 
     /* Start the SysTick timer with a period of 1 ms. */
     Cy_SysTick_SetClockSource(CY_SYSTICK_CLOCK_SOURCE_CLK_CPU);
+    
+#if CY_CPU_CORTEX_M4
     Cy_SysTick_SetReload(Cy_SysClk_ClkFastGetFrequency() / 1000U);
+#else
+    Cy_SysTick_SetReload(Cy_SysClk_ClkSlowGetFrequency() / 1000U);
+#endif /* CY_CPU_CORTEX_M4 */
+
     Cy_SysTick_Clear();
     Cy_SysTick_Enable();
 }
@@ -160,21 +166,6 @@ Cy_Fx2g3_OnResetInit (
             (3UL << MAIN_REG_CTRL_DMA_SRC_SEL_Pos));
 }
 
-/**
- * \name ConfigurePeripheralClocks
- * \brief Configure the clock applied to USBFS IP block.
- * \retval None
- */
-void ConfigurePeripheralClocks()
-{
-    /* Configure PERI 16 bit clock divider for 100 KHz operation and enable it. */
-    Cy_SysClk_PeriphSetDivider (CY_SYSCLK_DIV_16_BIT, 1, 749);
-    Cy_SysClk_PeriphEnableDivider (CY_SYSCLK_DIV_16_BIT, 1);
-    Cy_SysLib_DelayUs(10);
-
-    /* Connect the PERI clock to the USBFS input. */
-    Cy_SysClk_PeriphAssignDivider(PCLK_USB_CLOCK_DEV_BRS, CY_SYSCLK_DIV_16_BIT, 1);
-}
 
 #if DEBUG_INFRA_EN
 void PrintTaskHandler(void *pTaskParam)
@@ -345,7 +336,7 @@ void Cy_USB_USBHSInit (void)
  */
 static void Cy_USB_DisableUsbBlock (void)
 {
-    DBG_APP_INFO("USB DISABLE\r\n");
+        DBG_APP_INFO("USB: Disabled \r\n");
 }
 
 /**
@@ -369,13 +360,9 @@ void Cy_USB_ConnectionDisable (cy_stc_usb_app_ctxt_t *pAppCtxt)
  */
 bool Cy_USB_ConnectionEnable (cy_stc_usb_app_ctxt_t *pAppCtxt)
 {
-    DBG_APP_INFO("Cy_USB_ConnectionEnable >>\r\n");
-    DBG_APP_INFO("HS\r\n");
+    DBG_APP_INFO("USB: Enable connection\r\n");
     Cy_USBD_ConnectDevice(pAppCtxt->pUsbdCtxt, CY_USBD_USB_DEV_HS);
     pAppCtxt->usbConnected = true;
-
-    Cy_SysLib_DelayUs(10);
-    DBG_APP_INFO("Cy_USB_ConnectionEnable <<\r\n");
     return true;
 }
 

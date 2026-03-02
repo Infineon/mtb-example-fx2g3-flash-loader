@@ -7,7 +7,7 @@
 #
 ################################################################################
 # \copyright
-# Copyright (2025), Cypress Semiconductor Corporation (an Infineon company)
+# Copyright (2026), Cypress Semiconductor Corporation (an Infineon company)
 # SPDX-License-Identifier: Apache-2.0
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +61,7 @@ TOOLCHAIN=GCC_ARM
 # Generate hex compatible with REV2 Options include:
 #
 # yes -- Hex compatible for REV02 kit
-# no  -- Hex compatible for REV01 kit, need to also set SINGLE_SPI macro to "1u"
+# no  -- Hex compatible for REV01 kit, must also set the SPI_QUAD_MODE macro to "0u" in this Makefile
 REV02 ?= yes
 
 # Default build configuration. Options include:
