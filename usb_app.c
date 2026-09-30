@@ -224,6 +224,18 @@ Cy_USB_HandleCtrlSetup (void *pApp, cy_stc_usbd_app_msg_t *pMsg)
             }
                   
             /* Handle SPI vendor commands */
+            if (bRequest == FLASH_LOADER_BOOT_MODE
+                && (wLength != 0)
+                && ((bmRequest & 0x80) != 0))
+            {
+                DBG_APP_INFO("FL: Bootloader-style Flash Loader\r\n");
+                retStatus = Cy_USB_USBD_SendEndp0Data(pAppCtxt->pUsbdCtxt, (uint8_t*)"BOOTMODE", 8);
+                if(retStatus == CY_USBD_STATUS_SUCCESS)
+                {
+                    isReqHandled = true;
+                }
+            }
+
             if (bRequest == FLASH_CMD_CHECK_SPI_SUPPORT)
             {
                 DBG_APP_INFO("FL: Flash Check \r\n");

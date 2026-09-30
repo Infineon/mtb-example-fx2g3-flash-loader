@@ -131,6 +131,7 @@
 /* Vendor commands sent by USB Host application (eg: EZ-USB FX Control Center) */
 typedef enum cy_en_flashProgrammerVendorCmd_t
 {
+    FLASH_LOADER_BOOT_MODE          = 0xA1,
     FLASH_CMD_CHECK_SPI_SUPPORT     = 0xB0,
     FLASH_CMD_CHECK_STATUS          = 0xB5,
     FLASH_CMD_FLASH_WRITE           = 0xB2,
